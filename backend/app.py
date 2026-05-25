@@ -404,7 +404,7 @@ class SmartDraftingEngine:
 
         return value
 
-    def process_document(self, file_path: str) -> dict:
+    def process_document(self, file_path: str, ai_mode: str = "auto", groq_api_key: str = "", ollama_port: int = 11435, ollama_model: str = "qwen2.5:3b") -> dict:
         """
         Main entry point: Process a document (PDF or Image)
         Returns structured extraction result
@@ -451,7 +451,13 @@ class SmartDraftingEngine:
         ai_result = None
         if AI_AVAILABLE:
             try:
-                ai_result = process_with_ai(all_text)
+                ai_result = process_with_ai(
+                    all_text,
+                    mode=ai_mode,
+                    api_key=groq_api_key or os.environ.get('GROQ_API_KEY', ''),
+                    ollama_port=ollama_port,
+                    ollama_model=ollama_model
+                )
             except Exception as e:
                 ai_result = {"ai_enabled": False, "error": str(e)}
 
@@ -534,6 +540,12 @@ class SmartDraftingAPI(BaseHTTPRequestHandler):
         try:
             content_type = self.headers.get('Content-Type', '')
 
+            # Read AI mode headers
+            ai_mode = self.headers.get('X-AI-Mode', 'auto')
+            groq_api_key = self.headers.get('X-Groq-API-Key', '')
+            ollama_port = int(self.headers.get('X-Ollama-Port', '11435'))
+            ollama_model = self.headers.get('X-Ollama-Model', 'qwen2.5:3b')
+
             if 'multipart/form-data' in content_type:
                 # Parse boundary from content-type
                 boundary = None
@@ -587,7 +599,7 @@ class SmartDraftingAPI(BaseHTTPRequestHandler):
                         tmp_path = tmp.name
 
                     # Process document
-                    result = self.engine.process_document(tmp_path)
+                    result = self.engine.process_document(tmp_path, ai_mode=ai_mode, groq_api_key=groq_api_key, ollama_port=ollama_port, ollama_model=ollama_model)
 
                     # Cleanup
                     os.unlink(tmp_path)

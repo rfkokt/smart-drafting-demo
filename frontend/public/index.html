@@ -1015,7 +1015,8 @@
 
       // Reset steps
       const stepIds = ['stepC1','stepC2','stepC3','stepC4','stepC5'];
-      const stepLabels = ['Membaca dokumen...','Pre-processing (CLAHE + denoise)...','OCR extraction (Tesseract 5)...','AI field extraction (LLaMA 3.1)...','Confidence scoring & validation...'];
+      const aiLabel = currentAiMode === 'local' ? selectedLocalModel + ' (Lokal)' : 'LLaMA 3.1 (Groq Cloud)';
+      const stepLabels = ['Membaca dokumen...','Pre-processing (CLAHE + denoise)...','OCR extraction (Tesseract 5)...','AI field extraction (' + aiLabel + ')...','Confidence scoring & validation...'];
       stepIds.forEach((id, i) => { const el = document.getElementById(id); el.className = ''; el.textContent = '○ ' + stepLabels[i]; });
       document.getElementById('progressBarCenter').style.width = '0%';
       document.getElementById('processingTitle').textContent = 'Memproses dokumen...';
