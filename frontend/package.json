@@ -1,18 +1,67 @@
 {
-  "name": "smart-drafting-demo",
+  "name": "smart-drafting-engine",
   "version": "1.0.0",
-  "description": "Smart Drafting Engine - POC Demo (Beauty Contest)",
+  "description": "Smart Drafting Engine - OCR Desktop App",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "concurrently \"cd backend && python3 app.py\" \"electron .\""
+    "dev": "electron .",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:all": "electron-builder --mac --win"
   },
   "dependencies": {
-    "axios": "^1.7.0",
     "electron-is-dev": "^2.0.0"
   },
   "devDependencies": {
     "concurrently": "^8.2.0",
-    "electron": "^28.0.0"
+    "electron": "^28.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.smartdrafting.engine",
+    "productName": "Smart Drafting Engine",
+    "copyright": "Copyright © 2026",
+    "directories": {
+      "output": "../dist"
+    },
+    "extraResources": [
+      {
+        "from": "../backend-dist",
+        "to": "backend-dist",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../ollama-bin/${os}",
+        "to": "ollama",
+        "filter": ["**/*"]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.business",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] }
+      ],
+      "icon": "public/icon.icns"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "dmg": {
+      "title": "Smart Drafting Engine ${version}",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    }
   }
 }

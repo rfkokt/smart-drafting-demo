@@ -129,6 +129,79 @@
       animation: none;
     }
 
+    .header-status-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-status + .header-status {
+      padding-left: 12px;
+      border-left: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .ai-mode-toggle {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface-2);
+      color: var(--text);
+      position: relative;
+      user-select: none;
+    }
+    .ai-mode-toggle:hover { background: var(--surface-3, var(--border)); }
+
+    .ai-mode-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      width: 260px;
+      z-index: 500;
+    }
+
+    .ai-mode-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text);
+    }
+    .ai-mode-option:hover { background: var(--surface-2); }
+    .ai-mode-option.active { background: var(--accent-glow); }
+
+    #downloadOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(6px);
+    }
+    #downloadOverlay .download-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 32px;
+      width: 440px;
+      max-width: 90vw;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      text-align: center;
+    }
+
     @keyframes glow {
       0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--success); }
       50% { opacity: 0.6; box-shadow: 0 0 4px var(--success); }
@@ -609,12 +682,58 @@
       </div>
     </div>
     <div class="header-right">
-      <div class="ai-badge">
-        <span>⚡</span> LLaMA 3.1 + Tesseract 5
-      </div>
-      <div class="header-status">
-        <span class="status-dot" id="statusDot"></span>
-        <span id="statusText">Connecting...</span>
+      <div class="ai-badge" id="aiBadge">
+          <span>⚡</span> Ollama + Tesseract 5
+        </div>
+        <div class="ai-mode-toggle" id="aiModeToggle" onclick="toggleAiModeMenu()">
+          <span id="aiModeIcon">☁️</span>
+          <span id="aiModeLabel">Cloud</span>
+          <span style="font-size:9px;opacity:0.7;">▼</span>
+        </div>
+        <div class="ai-mode-menu" id="aiModeMenu" style="display:none;">
+          <div class="ai-mode-option" id="optCloud" onclick="setAiMode('cloud')">
+            <span>☁️</span>
+            <div>
+              <div style="font-weight:600;">Cloud (Groq)</div>
+              <div style="font-size:10px;opacity:0.7;">Lebih cepat, butuh internet</div>
+            </div>
+          </div>
+          <div class="ai-mode-option" id="optLocal" onclick="setAiMode('local')">
+            <span>🖥️</span>
+            <div>
+              <div style="font-weight:600;">Lokal (Ollama)</div>
+              <div style="font-size:10px;opacity:0.7;">Offline, unduh model sekali</div>
+            </div>
+          </div>
+          <div style="padding: 8px 12px; border-top: 1px solid var(--border);">
+            <label style="font-size:10px;color:var(--text-secondary);display:block;margin-bottom:4px;">Groq API Key (untuk Cloud)</label>
+            <input type="password" id="groqKeyInput" placeholder="gsk_xxx..." style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:11px;font-family:var(--mono);background:var(--surface-2);color:var(--text);" oninput="saveGroqKey()" />
+          </div>
+          <div style="padding: 8px 12px; border-top: 1px solid var(--border);">
+            <label style="font-size:10px;color:var(--text-secondary);display:block;margin-bottom:4px;">Model Lokal</label>
+            <select id="localModelSelect" onchange="setLocalModel(this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:11px;background:var(--surface-2);color:var(--text);">
+              <option value="qwen2.5:1.5b">qwen2.5:1.5b — Fast (~986MB)</option>
+              <option value="gemma2:2b">gemma2:2b — Light (~1.6GB)</option>
+              <option value="qwen2.5:3b">qwen2.5:3b — Recommended (~1.9GB)</option>
+              <option value="phi3.5:3.8b">phi3.5:3.8b — Reasoning (~2.2GB)</option>
+              <option value="qwen2.5:7b">qwen2.5:7b — High Accuracy (~4.7GB)</option>
+            </select>
+          </div>
+          <div id="ollamaMenuStatus" style="padding: 8px 12px; border-top: 1px solid var(--border); font-size: 10px; color: var(--text-muted);"></div>
+        </div>
+      <div class="header-status-group">
+        <div class="header-status">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">OCR...</span>
+        </div>
+        <div class="header-status">
+          <span class="status-dot" id="internetDot"></span>
+          <span id="internetText">Internet...</span>
+        </div>
+        <div class="header-status">
+          <span class="status-dot" id="aiDot"></span>
+          <span id="aiStatusText">AI...</span>
+        </div>
       </div>
     </div>
   </header>
@@ -760,7 +879,7 @@
     let selectedFile = null;
     let isProcessing = false;
 
-    // Backend check
+    // Backend / OCR status check
     async function checkBackend() {
       try {
         const result = await window.smartDrafting.checkBackend();
@@ -768,18 +887,39 @@
         const text = document.getElementById('statusText');
         if (result.status === 'ok') {
           dot.className = 'status-dot';
-          text.textContent = 'Online';
+          text.textContent = 'OCR Siap';
+        } else {
+          dot.className = 'status-dot offline';
+          text.textContent = 'OCR Error';
+        }
+      } catch (e) {
+        document.getElementById('statusDot').className = 'status-dot offline';
+        document.getElementById('statusText').textContent = 'OCR Error';
+      }
+    }
+    checkBackend();
+    setInterval(checkBackend, 5000);
+
+    // Internet status check (via Node IPC — reliable di Electron)
+    async function updateInternetStatus() {
+      const dot = document.getElementById('internetDot');
+      const text = document.getElementById('internetText');
+      try {
+        const result = await window.smartDrafting.checkInternet();
+        if (result.online) {
+          dot.className = 'status-dot';
+          text.textContent = 'Internet';
         } else {
           dot.className = 'status-dot offline';
           text.textContent = 'Offline';
         }
       } catch (e) {
-        document.getElementById('statusDot').className = 'status-dot offline';
-        document.getElementById('statusText').textContent = 'Error';
+        dot.className = 'status-dot offline';
+        text.textContent = 'Offline';
       }
     }
-    checkBackend();
-    setInterval(checkBackend, 5000);
+    updateInternetStatus();
+    setInterval(updateInternetStatus, 5000);
 
     // File selection
     async function handleSelectFile() {
@@ -819,7 +959,12 @@
       await animateProgress();
 
       try {
-        const result = await window.smartDrafting.extractDocument(selectedFile.path);
+        const result = await window.smartDrafting.extractDocument({
+          filePath: selectedFile.path,
+          aiMode: currentAiMode,
+          apiKey: localStorage.getItem('groq_api_key') || '',
+          ollamaModel: selectedLocalModel
+        });
         if (result.error) {
           alert('Error: ' + result.error);
           isProcessing = false;
@@ -966,7 +1111,7 @@
     function buildAiPanel(aiResult) {
       const container = document.getElementById('aiContent');
       if (!aiResult || !aiResult.ai_enabled) {
-        container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);"><div style="font-size: 28px; margin-bottom: 8px;">🤖</div><p style="font-size: 11px;">AI tidak aktif. Set GROQ_API_KEY di file .env</p></div>';
+      container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);"><div style="font-size: 28px; margin-bottom: 8px;">🤖</div><p style="font-size: 11px;">AI tidak aktif. Pilih mode AI di header (☁️/🖥️)</p></div>';
         return;
       }
       let html = '';
@@ -1028,6 +1173,218 @@
       return (bytes/(1024*1024)).toFixed(1) + ' MB';
     }
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // ── AI Mode ────────────────────────────────────────────
+    let currentAiMode = localStorage.getItem('ai_mode') || 'cloud';
+    let selectedLocalModel = localStorage.getItem('local_ai_model') || 'qwen2.5:3b';
+    let ollamaStatus = { online: false, modelReady: false };
+    const LOCAL_MODEL_META = {
+      'qwen2.5:1.5b': { size: '~986MB', label: 'Fast' },
+      'gemma2:2b': { size: '~1.6GB', label: 'Light' },
+      'qwen2.5:3b': { size: '~1.9GB', label: 'Recommended' },
+      'phi3.5:3.8b': { size: '~2.2GB', label: 'Reasoning' },
+      'qwen2.5:7b': { size: '~4.7GB', label: 'High Accuracy' }
+    };
+
+    function setAiMode(mode) {
+      currentAiMode = mode;
+      localStorage.setItem('ai_mode', mode);
+      updateAiModeUI();
+      document.getElementById('aiModeMenu').style.display = 'none';
+      if (mode === 'local' && !ollamaStatus.modelReady) {
+        showDownloadOverlay();
+      }
+    }
+
+    function setLocalModel(model) {
+      selectedLocalModel = model;
+      localStorage.setItem('local_ai_model', model);
+      ollamaStatus.modelReady = false;
+      updateAiModeUI();
+      checkOllamaStatus();
+      if (currentAiMode === 'local') showDownloadOverlay();
+    }
+
+    function toggleAiModeMenu() {
+      const menu = document.getElementById('aiModeMenu');
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function saveGroqKey() {
+      const key = document.getElementById('groqKeyInput').value.trim();
+      if (key) localStorage.setItem('groq_api_key', key);
+      else localStorage.removeItem('groq_api_key');
+    }
+
+    function updateAiModeUI() {
+      const icon = document.getElementById('aiModeIcon');
+      const label = document.getElementById('aiModeLabel');
+      const keyInput = document.getElementById('groqKeyInput');
+      if (keyInput) keyInput.value = localStorage.getItem('groq_api_key') || '';
+      const modelSelect = document.getElementById('localModelSelect');
+      if (modelSelect) modelSelect.value = selectedLocalModel;
+      document.getElementById('optCloud').classList.toggle('active', currentAiMode === 'cloud');
+      document.getElementById('optLocal').classList.toggle('active', currentAiMode === 'local');
+      if (currentAiMode === 'cloud') {
+        icon.textContent = '☁️';
+        label.textContent = 'Cloud';
+      } else {
+        icon.textContent = '🖥️';
+        label.textContent = 'Lokal';
+      }
+      updateOllamaMenuStatus();
+    }
+
+    function updateOllamaMenuStatus() {
+      const el = document.getElementById('ollamaMenuStatus');
+      if (!el) return;
+      if (ollamaStatus.online && ollamaStatus.modelReady) {
+        el.innerHTML = '🟢 Ollama siap · Model ' + selectedLocalModel + ' tersedia';
+        el.style.color = 'var(--success)';
+      } else if (ollamaStatus.online && !ollamaStatus.modelReady) {
+        el.innerHTML = '🟡 Ollama aktif · Model belum diunduh <button onclick="showDownloadOverlay()" style="margin-left:6px;font-size:9px;padding:2px 6px;cursor:pointer;border:1px solid var(--border);border-radius:4px;background:var(--surface-2);">Unduh</button>';
+        el.style.color = 'var(--warning)';
+      } else {
+        el.innerHTML = '🔴 Ollama belum aktif';
+        el.style.color = 'var(--danger)';
+      }
+    }
+
+    async function checkOllamaStatus() {
+      try {
+        const result = await window.smartDrafting.checkOllama(selectedLocalModel);
+        ollamaStatus = result;
+        const dot = document.getElementById('aiDot');
+        const text = document.getElementById('aiStatusText');
+        if (currentAiMode === 'cloud') {
+          const hasKey = !!(localStorage.getItem('groq_api_key') || '');
+          dot.className = hasKey ? 'status-dot' : 'status-dot offline';
+          text.textContent = hasKey ? 'AI: Cloud' : 'AI: No Key';
+        } else {
+          if (result.online && result.modelReady) {
+            dot.className = 'status-dot';
+            text.textContent = 'AI: Lokal';
+          } else if (result.online) {
+            dot.className = 'status-dot offline';
+            text.textContent = 'AI: No Model';
+          } else {
+            dot.className = 'status-dot offline';
+            text.textContent = 'AI: Offline';
+          }
+        }
+        updateOllamaMenuStatus();
+      } catch (e) {
+        document.getElementById('aiDot').className = 'status-dot offline';
+        document.getElementById('aiStatusText').textContent = 'AI: Error';
+      }
+    }
+    checkOllamaStatus();
+    setInterval(checkOllamaStatus, 8000);
+
+    updateAiModeUI();
+
+    document.addEventListener('click', (e) => {
+      const toggle = document.getElementById('aiModeToggle');
+      const menu = document.getElementById('aiModeMenu');
+      if (menu && toggle && !toggle.contains(e.target) && !menu.contains(e.target)) {
+        menu.style.display = 'none';
+      }
+    });
+
+    // ── First-run Download Overlay ─────────────────────────
+    let isDownloading = false;
+
+    function showDownloadOverlay() {
+      let overlay = document.getElementById('downloadOverlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'downloadOverlay';
+        overlay.innerHTML = `
+          <div class="download-card">
+            <div style="font-size:36px;margin-bottom:12px;">🤖</div>
+            <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;">Setup AI Model</h3>
+            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:20px;">
+              Download model <strong id="dlModelName">qwen2.5:3b</strong> <span id="dlModelSize">(~1.9GB)</span> untuk AI offline.<br>
+              Cukup sekali — setelah ini AI bisa dipakai tanpa internet.
+            </p>
+            <div id="dlProgressBar" style="height:6px;background:var(--border);border-radius:3px;margin-bottom:8px;display:none;">
+              <div id="dlProgressFill" style="height:100%;background:var(--accent);border-radius:3px;width:0%;transition:width 0.3s;"></div>
+            </div>
+            <div id="dlStatus" style="font-size:11px;color:var(--text-muted);margin-bottom:20px;min-height:16px;font-family:var(--mono);"></div>
+            <div style="display:flex;gap:8px;justify-content:center;">
+              <button id="dlBtnStart" class="btn btn-primary" onclick="startModelDownload()">⬇️ Download Model</button>
+              <button id="dlBtnCancel" class="btn btn-outline" onclick="cancelModelDownload()" style="display:none;">✕ Batal</button>
+              <button id="dlBtnSkip" class="btn btn-outline" onclick="skipDownload()">Lewati — Pakai tanpa AI</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+      }
+      const meta = LOCAL_MODEL_META[selectedLocalModel] || LOCAL_MODEL_META['qwen2.5:3b'];
+      const modelName = document.getElementById('dlModelName');
+      const modelSize = document.getElementById('dlModelSize');
+      if (modelName) modelName.textContent = selectedLocalModel;
+      if (modelSize) modelSize.textContent = '(' + meta.size + ')';
+      overlay.style.display = 'flex';
+    }
+
+    function hideDownloadOverlay() {
+      const overlay = document.getElementById('downloadOverlay');
+      if (overlay) overlay.style.display = 'none';
+    }
+
+    function skipDownload() {
+      hideDownloadOverlay();
+      setAiMode('cloud');
+    }
+
+    async function startModelDownload() {
+      if (isDownloading) return;
+      isDownloading = true;
+      document.getElementById('dlBtnStart').style.display = 'none';
+      document.getElementById('dlBtnSkip').style.display = 'none';
+      document.getElementById('dlBtnCancel').style.display = 'inline-flex';
+      document.getElementById('dlProgressBar').style.display = 'block';
+      document.getElementById('dlStatus').textContent = 'Memulai download...';
+
+      window.smartDrafting.onDownloadProgress((data) => {
+        const line = data.line || '';
+        document.getElementById('dlStatus').textContent = line.substring(0, 80);
+        const match = line.match(/(\d+)%/);
+        if (match) {
+          document.getElementById('dlProgressFill').style.width = match[1] + '%';
+        }
+      });
+
+      try {
+        await window.smartDrafting.downloadModel(selectedLocalModel);
+        isDownloading = false;
+        document.getElementById('dlStatus').textContent = '✅ Model berhasil diunduh!';
+        document.getElementById('dlProgressFill').style.width = '100%';
+        document.getElementById('dlBtnCancel').style.display = 'none';
+        ollamaStatus.modelReady = true;
+        updateAiModeUI();
+        setTimeout(hideDownloadOverlay, 1500);
+      } catch (e) {
+        isDownloading = false;
+        const msg = e.message || 'Unknown error';
+        document.getElementById('dlStatus').innerHTML = '❌ ' + msg.replace(/\n/g, '<br>');
+        document.getElementById('dlBtnStart').style.display = 'inline-flex';
+        document.getElementById('dlBtnSkip').style.display = 'inline-flex';
+        document.getElementById('dlBtnCancel').style.display = 'none';
+      } finally {
+        window.smartDrafting.removeDownloadProgressListener();
+      }
+    }
+
+    async function cancelModelDownload() {
+      await window.smartDrafting.cancelDownload();
+      isDownloading = false;
+      document.getElementById('dlStatus').textContent = 'Download dibatalkan.';
+      document.getElementById('dlBtnStart').style.display = 'inline-flex';
+      document.getElementById('dlBtnSkip').style.display = 'inline-flex';
+      document.getElementById('dlBtnCancel').style.display = 'none';
+    }
   </script>
 </body>
 </html>

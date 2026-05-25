@@ -19,15 +19,46 @@ from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
+import sys
 import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter
 from pdf2image import convert_from_path
 import numpy as np
 import cv2
 
+
+def _get_bundled_bin_dir() -> Path:
+    """Return path to bundled binaries dir when running as PyInstaller bundle."""
+    if getattr(sys, 'frozen', False):
+        return Path(sys._MEIPASS) / 'bin'
+    return None
+
+
+def _setup_bundled_paths():
+    """Configure Tesseract and Poppler paths when running as bundled app."""
+    bin_dir = _get_bundled_bin_dir()
+    if bin_dir is None:
+        return None
+
+    if sys.platform == 'win32':
+        tesseract_bin = bin_dir / 'tesseract.exe'
+        tessdata_dir = bin_dir / 'tessdata'
+    else:
+        tesseract_bin = bin_dir / 'tesseract'
+        tessdata_dir = bin_dir / 'tessdata'
+
+    if tesseract_bin.exists():
+        pytesseract.pytesseract.tesseract_cmd = str(tesseract_bin)
+        os.environ['TESSDATA_PREFIX'] = str(tessdata_dir)
+
+    return str(bin_dir) if bin_dir.exists() else None
+
+
+BUNDLED_POPPLER_PATH = _setup_bundled_paths()
+
 # AI Engine
 try:
-    from ai_engine import process_with_ai
+    from ai_engine import process_with_ai, check_ollama_available, check_model_exists, OLLAMA_DEFAULT_PORT
     AI_AVAILABLE = True
 except ImportError:
     AI_AVAILABLE = False
@@ -383,7 +414,10 @@ class SmartDraftingEngine:
 
         # Convert PDF to images, or load image directly
         if file_path.suffix.lower() == '.pdf':
-            images = convert_from_path(str(file_path), dpi=300)
+            pdf_kwargs = {'dpi': 300}
+            if BUNDLED_POPPLER_PATH:
+                pdf_kwargs['poppler_path'] = BUNDLED_POPPLER_PATH
+            images = convert_from_path(str(file_path), **pdf_kwargs)
             # Limit to first 3 pages for performance
             if len(images) > 3:
                 images = images[:3]
