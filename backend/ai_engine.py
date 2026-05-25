@@ -47,6 +47,28 @@ def check_model_exists(port: int = OLLAMA_DEFAULT_PORT, model: str = DEFAULT_OLL
         return False
 
 
+def _list_installed_models(port: int = OLLAMA_DEFAULT_PORT) -> list:
+    try:
+        req = urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/api/tags", timeout=2
+        )
+        data = json.loads(req.read())
+        return [m.get("name", "") for m in data.get("models", [])]
+    except Exception:
+        return []
+
+
+def _find_best_available_model(port: int = OLLAMA_DEFAULT_PORT, preferred: str = DEFAULT_OLLAMA_MODEL) -> str:
+    """Auto-detect models. Use preferred if available, else fall back to any installed supported model."""
+    installed = _list_installed_models(port)
+    if preferred and any(preferred in m for m in installed):
+        return preferred
+    for supported in SUPPORTED_OLLAMA_MODELS:
+        if any(supported in m for m in installed):
+            return supported
+    return DEFAULT_OLLAMA_MODEL
+
+
 def _call_ollama(messages: list, port: int = OLLAMA_DEFAULT_PORT, max_tokens: int = 1500, model: str = DEFAULT_OLLAMA_MODEL) -> str:
     payload = json.dumps({
         "model": model,
@@ -55,15 +77,32 @@ def _call_ollama(messages: list, port: int = OLLAMA_DEFAULT_PORT, max_tokens: in
         "options": {"temperature": 0.1, "num_predict": max_tokens}
     }).encode()
 
-    req = urllib.request.Request(
-        f"http://127.0.0.1:{port}/v1/chat/completions",
-        data=payload,
-        headers={"Content-Type": "application/json", "Authorization": "Bearer ollama"},
-        method="POST"
-    )
-    resp = urllib.request.urlopen(req, timeout=120)
-    data = json.loads(resp.read())
-    return data["choices"][0]["message"]["content"].strip()
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/chat",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        resp = urllib.request.urlopen(req, timeout=120)
+        data = json.loads(resp.read())
+        return data["message"]["content"].strip()
+    except Exception:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/v1/chat/completions",
+            data=json.dumps({
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "temperature": 0.1,
+                "max_tokens": max_tokens
+            }).encode(),
+            headers={"Content-Type": "application/json", "Authorization": "Bearer ollama"},
+            method="POST"
+        )
+        resp = urllib.request.urlopen(req, timeout=120)
+        data = json.loads(resp.read())
+        return data["choices"][0]["message"]["content"].strip()
 
 
 def _call_groq(messages: list, api_key: str, max_tokens: int = 1500) -> str:
@@ -79,12 +118,22 @@ def _call_groq(messages: list, api_key: str, max_tokens: int = 1500) -> str:
 
 
 def _parse_json_response(raw: str) -> any:
+    raw = raw.strip()
     if raw.startswith("```"):
         parts = raw.split("```")
         raw = parts[1] if len(parts) > 1 else raw
         if raw.startswith("json"):
             raw = raw[4:]
-    return json.loads(raw.strip())
+        return json.loads(raw.strip())
+    brace_start = raw.find("[")
+    brace_end = raw.rfind("]") + 1
+    curly_start = raw.find("{")
+    curly_end = raw.rfind("}") + 1
+    if brace_start >= 0 and brace_end > brace_start:
+        return json.loads(raw[brace_start:brace_end])
+    if curly_start >= 0 and curly_end > curly_start:
+        return json.loads(raw[curly_start:curly_end])
+    return json.loads(raw)
 
 
 def _get_field_spec(doc_type: str) -> list:
@@ -210,7 +259,15 @@ def process_with_ai(
         ollama_model = DEFAULT_OLLAMA_MODEL
 
     groq_available = bool(api_key)
-    ollama_ready = check_ollama_available(ollama_port) and check_model_exists(ollama_port, ollama_model)
+    ollama_available = check_ollama_available(ollama_port)
+
+    if ollama_available and not check_model_exists(ollama_port, ollama_model):
+        best_model = _find_best_available_model(ollama_port, ollama_model)
+        if best_model != ollama_model:
+            print(f"[AI] Model '{ollama_model}' tidak ditemukan, fallback ke '{best_model}'")
+            ollama_model = best_model
+
+    ollama_ready = ollama_available and check_model_exists(ollama_port, ollama_model)
 
     def groq_caller(messages, max_tokens=1500):
         return _call_groq(messages, api_key, max_tokens)
@@ -241,9 +298,15 @@ def process_with_ai(
             model_label = f"{ollama_model} (Ollama Lokal)"
             mode_used = "local"
         else:
+            installed = _list_installed_models(ollama_port)
+            hint = ""
+            if check_ollama_available(ollama_port) and not installed:
+                hint = " Jalankan: ollama pull qwen2.5:1.5b"
+            elif not check_ollama_available(ollama_port):
+                hint = " Pastikan Ollama sedang berjalan (ollama serve)."
             return {
                 "ai_enabled": False,
-                "message": "Mode Lokal: Ollama belum siap atau model belum diunduh.",
+                "message": f"Mode Lokal: Ollama belum siap atau model belum diunduh.{hint}",
                 "classification": None,
                 "fields": []
             }
