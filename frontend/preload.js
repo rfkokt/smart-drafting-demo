@@ -1,13 +1,18 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Expose protected APIs to renderer process
 contextBridge.exposeInMainWorld('smartDrafting', {
-  // Select file via native dialog
   selectFile: () => ipcRenderer.invoke('select-file'),
-
-  // Send file to backend for OCR extraction
-  extractDocument: (filePath) => ipcRenderer.invoke('extract-document', filePath),
-
-  // Check if backend is running
+  extractDocument: (opts) => ipcRenderer.invoke('extract-document', opts),
   checkBackend: () => ipcRenderer.invoke('check-backend'),
+  checkInternet: () => ipcRenderer.invoke('check-internet'),
+  checkOllama: (model) => ipcRenderer.invoke('check-ollama', model),
+  downloadModel: (model) => ipcRenderer.invoke('download-model', model),
+  cancelDownload: () => ipcRenderer.invoke('cancel-download'),
+  getOllamaPort: () => ipcRenderer.invoke('get-ollama-port'),
+  onDownloadProgress: (callback) => {
+    ipcRenderer.on('download-progress', (event, data) => callback(data));
+  },
+  removeDownloadProgressListener: () => {
+    ipcRenderer.removeAllListeners('download-progress');
+  }
 });

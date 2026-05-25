@@ -22,7 +22,7 @@ from app import SmartDraftingEngine
 # Try AI engine
 try:
     os.chdir(os.path.join(os.path.dirname(__file__), 'backend'))
-    from ai_engine import process_with_ai
+    from ai_engine import process_with_ai, check_ollama_available, check_model_exists, OLLAMA_DEFAULT_PORT
     AI_AVAILABLE = True
     os.chdir(os.path.dirname(__file__))
 except Exception:
@@ -45,7 +45,21 @@ def index():
 
 @app.route('/health')
 def health():
-    return jsonify({"status": "ok", "service": "Smart Drafting Engine", "version": "1.0.0-poc", "ai": AI_AVAILABLE})
+    ollama_ready = False
+    model_ready = False
+    if AI_AVAILABLE:
+        ollama_port = int(os.environ.get("OLLAMA_PORT", OLLAMA_DEFAULT_PORT))
+        ollama_ready = check_ollama_available(ollama_port)
+        if ollama_ready:
+            model_ready = check_model_exists(ollama_port)
+    return jsonify({
+        "status": "ok",
+        "service": "Smart Drafting Engine",
+        "version": "1.0.0-poc",
+        "ai": AI_AVAILABLE,
+        "ollama": ollama_ready,
+        "model_ready": model_ready
+    })
 
 @app.route('/extract', methods=['POST'])
 def extract():
@@ -56,28 +70,31 @@ def extract():
     if file.filename == '':
         return jsonify({"error": "No file selected"}), 400
 
-    # Get API key from request header (sent from frontend)
+    ai_mode = request.headers.get('X-AI-Mode', 'auto').strip()
     api_key = request.headers.get('X-Groq-API-Key', '').strip()
+    ollama_port = int(request.headers.get('X-Ollama-Port', str(OLLAMA_DEFAULT_PORT)))
+    ollama_model = request.headers.get('X-Ollama-Model', 'qwen2.5:3b').strip()
 
-    # Save to temp
     suffix = Path(file.filename).suffix or '.pdf'
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         file.save(tmp.name)
         tmp_path = tmp.name
 
     try:
-        # OCR extraction
         result = engine.process_document(tmp_path)
 
-        # AI extraction (use key from frontend)
-        if api_key and result.get("raw_text_preview"):
-            raw_text = result.get("raw_text_preview", "")
+        if AI_AVAILABLE and result.get("raw_text_preview"):
             try:
                 from pdf2image import convert_from_path
                 from PIL import Image
+                import app as _app_module
                 file_path = Path(tmp_path)
                 if file_path.suffix.lower() == '.pdf':
-                    images = convert_from_path(str(file_path), dpi=300)
+                    pdf_kwargs = {'dpi': 300}
+                    _poppler = getattr(_app_module, 'BUNDLED_POPPLER_PATH', None)
+                    if _poppler:
+                        pdf_kwargs['poppler_path'] = _poppler
+                    images = convert_from_path(str(file_path), **pdf_kwargs)
                     if len(images) > 3:
                         images = images[:3]
                 else:
@@ -85,12 +102,18 @@ def extract():
                 full_text = ""
                 for img in images:
                     full_text += engine.extract_text(img) + "\n"
-                ai_result = process_with_ai(full_text, api_key=api_key)
+                ai_result = process_with_ai(
+                    full_text,
+                    mode=ai_mode,
+                    api_key=api_key,
+                    ollama_port=ollama_port,
+                    ollama_model=ollama_model
+                )
             except Exception as e:
                 ai_result = {"ai_enabled": False, "error": str(e)}
             result["ai"] = ai_result
         else:
-            result["ai"] = {"ai_enabled": False, "message": "No API key provided. Set key in Settings."}
+            result["ai"] = {"ai_enabled": False, "message": "AI engine tidak tersedia."}
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -114,7 +137,7 @@ if __name__ == '__main__':
 ║                                                          ║
 ║  🌐 Open in browser: http://localhost:{port}             ║
 ║                                                          ║
-║  AI: {'✅ Enabled (Groq)' if AI_AVAILABLE else '❌ Disabled (set GROQ_API_KEY in .env)'}
+║  AI Engine: {'✅ Ready (Hybrid: Cloud + Lokal)' if AI_AVAILABLE else '❌ Tidak tersedia'}
 ║  OCR: Tesseract 5 + OpenCV                              ║
 ║                                                          ║
 ║  Press Ctrl+C to stop                                    ║

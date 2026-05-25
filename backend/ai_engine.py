@@ -1,76 +1,94 @@
 """
 AI Layer untuk Smart Drafting Engine
-Menggunakan Groq (LLaMA 3) untuk:
-1. Document Classification (Invoice / B/L / Packing List)
-2. Intelligent Field Extraction (NER dari raw OCR text)
-3. Data Validation & Correction
+Hybrid: Groq (Cloud) + Ollama (Lokal)
+
+Mode:
+  cloud → Groq API (LLaMA 3.1 8B) — butuh internet + API key
+  local → Ollama lokal (model selectable) — fully offline
+  auto  → coba Groq, fallback Ollama kalau offline/no key
 """
 
 import os
 import json
+import urllib.request
+import urllib.error
 from pathlib import Path
-from dotenv import load_dotenv
-from groq import Groq
 
-# Load .env file
-env_path = Path(__file__).parent.parent / '.env'
-load_dotenv(env_path)
-
-# Groq API Key (fallback, prefer key from request)
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-
-
-def get_client(api_key=None):
-    """Get Groq client with provided or env API key"""
-    key = api_key or GROQ_API_KEY
-    if not key:
-        return None
-    return Groq(api_key=key)
+DEFAULT_OLLAMA_MODEL = "qwen2.5:3b"
+SUPPORTED_OLLAMA_MODELS = {
+    "qwen2.5:1.5b": {"label": "Fast", "size": "~986MB"},
+    "gemma2:2b": {"label": "Light", "size": "~1.6GB"},
+    "qwen2.5:3b": {"label": "Recommended", "size": "~1.9GB"},
+    "phi3.5:3.8b": {"label": "Reasoning", "size": "~2.2GB"},
+    "qwen2.5:7b": {"label": "High Accuracy", "size": "~4.7GB"},
+}
+OLLAMA_DEFAULT_PORT = 11435
 
 
-def classify_document(raw_text: str, api_key=None) -> dict:
-    """
-    AI Document Classification
-    Classify document type: Invoice, Bill of Lading, Packing List, or Unknown
-    """
-    c = get_client(api_key)
-    if not c:
-        return {"type": "unknown", "confidence": 0, "ai_enabled": False}
-
-    prompt = f"""You are a customs document classifier. Based on the OCR text below, classify the document type.
-
-Respond ONLY with a JSON object (no markdown, no explanation):
-{{"type": "invoice" | "bill_of_lading" | "packing_list" | "unknown", "confidence": 0-100, "reason": "brief reason"}}
-
-OCR Text (first 1500 chars):
-{raw_text[:1500]}"""
-
+def check_ollama_available(port: int = OLLAMA_DEFAULT_PORT) -> bool:
     try:
-        response = c.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=150
+        req = urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/api/tags", timeout=2
         )
-        result = response.choices[0].message.content.strip()
-        # Parse JSON from response
-        parsed = json.loads(result)
-        parsed["ai_enabled"] = True
-        return parsed
-    except Exception as e:
-        return {"type": "unknown", "confidence": 0, "ai_enabled": False, "error": str(e)}
+        return req.status == 200
+    except Exception:
+        return False
 
 
-def extract_fields_ai(raw_text: str, doc_type: str = "invoice", api_key=None) -> list:
-    """
-    AI-powered Field Extraction
-    Uses LLM to extract structured fields from raw OCR text
-    """
-    c = get_client(api_key)
-    if not c:
-        return []
+def check_model_exists(port: int = OLLAMA_DEFAULT_PORT, model: str = DEFAULT_OLLAMA_MODEL) -> bool:
+    try:
+        req = urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/api/tags", timeout=2
+        )
+        data = json.loads(req.read())
+        models = [m.get("name", "") for m in data.get("models", [])]
+        return any(model in m for m in models)
+    except Exception:
+        return False
 
-    field_spec = {
+
+def _call_ollama(messages: list, port: int = OLLAMA_DEFAULT_PORT, max_tokens: int = 1500, model: str = DEFAULT_OLLAMA_MODEL) -> str:
+    payload = json.dumps({
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "options": {"temperature": 0.1, "num_predict": max_tokens}
+    }).encode()
+
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/v1/chat/completions",
+        data=payload,
+        headers={"Content-Type": "application/json", "Authorization": "Bearer ollama"},
+        method="POST"
+    )
+    resp = urllib.request.urlopen(req, timeout=120)
+    data = json.loads(resp.read())
+    return data["choices"][0]["message"]["content"].strip()
+
+
+def _call_groq(messages: list, api_key: str, max_tokens: int = 1500) -> str:
+    from groq import Groq
+    client = Groq(api_key=api_key)
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=messages,
+        temperature=0.1,
+        max_tokens=max_tokens
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _parse_json_response(raw: str) -> any:
+    if raw.startswith("```"):
+        parts = raw.split("```")
+        raw = parts[1] if len(parts) > 1 else raw
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return json.loads(raw.strip())
+
+
+def _get_field_spec(doc_type: str) -> list:
+    specs = {
         "invoice": [
             "invoice_number", "invoice_date", "supplier_name", "consignee",
             "total_amount", "currency", "hs_code", "weight_kg",
@@ -91,8 +109,29 @@ def extract_fields_ai(raw_text: str, doc_type: str = "invoice", api_key=None) ->
             "total_measurement_cbm", "marks_and_numbers", "description_of_goods"
         ]
     }
+    return specs.get(doc_type, specs["invoice"])
 
-    fields = field_spec.get(doc_type, field_spec["invoice"])
+
+def classify_document(raw_text: str, caller, mode_label: str) -> dict:
+    prompt = f"""You are a customs document classifier. Based on the OCR text below, classify the document type.
+
+Respond ONLY with a JSON object (no markdown, no explanation):
+{{"type": "invoice" | "bill_of_lading" | "packing_list" | "unknown", "confidence": 0-100, "reason": "brief reason"}}
+
+OCR Text (first 1500 chars):
+{raw_text[:1500]}"""
+
+    try:
+        result = caller([{"role": "user", "content": prompt}], max_tokens=150)
+        parsed = _parse_json_response(result)
+        parsed["ai_enabled"] = True
+        return parsed
+    except Exception as e:
+        return {"type": "unknown", "confidence": 0, "ai_enabled": False, "error": str(e)}
+
+
+def extract_fields_ai(raw_text: str, doc_type: str, caller) -> list:
+    fields = _get_field_spec(doc_type)
 
     prompt = f"""You are an AI assistant for customs document processing. Extract structured data from this OCR text of a {doc_type.replace('_', ' ')}.
 
@@ -112,45 +151,22 @@ OCR Text:
 {raw_text[:3000]}"""
 
     try:
-        response = c.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=1500
-        )
-        result = response.choices[0].message.content.strip()
-        
-        # Try to parse JSON - handle cases where LLM wraps in markdown
-        if result.startswith("```"):
-            result = result.split("```")[1]
-            if result.startswith("json"):
-                result = result[4:]
-        
-        parsed = json.loads(result)
-        
-        # Add metadata
+        result = caller([{"role": "user", "content": prompt}], max_tokens=1500)
+        parsed = _parse_json_response(result)
         for field in parsed:
             field["source"] = "ai"
+            conf = field.get("confidence", 0)
             field["status"] = (
-                "auto_filled" if field.get("confidence", 0) >= 90
-                else "review" if field.get("confidence", 0) >= 70
+                "auto_filled" if conf >= 90
+                else "review" if conf >= 70
                 else "manual"
             )
-        
         return parsed
     except Exception as e:
         return [{"error": str(e), "source": "ai"}]
 
 
-def validate_and_correct(fields: list, raw_text: str, api_key=None) -> list:
-    """
-    AI Validation & Correction
-    Cross-check extracted fields and suggest corrections
-    """
-    c = get_client(api_key)
-    if not c:
-        return fields
-
+def validate_and_correct(fields: list, raw_text: str, caller) -> list:
     fields_json = json.dumps(fields, indent=2)
 
     prompt = f"""You are a customs document validation AI. Review these extracted fields and correct any errors.
@@ -171,55 +187,106 @@ Rules:
 Return corrected JSON array:"""
 
     try:
-        response = c.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=2000
-        )
-        result = response.choices[0].message.content.strip()
-        
-        if result.startswith("```"):
-            result = result.split("```")[1]
-            if result.startswith("json"):
-                result = result[4:]
-        
-        return json.loads(result)
-    except:
+        result = caller([{"role": "user", "content": prompt}], max_tokens=2000)
+        return _parse_json_response(result)
+    except Exception:
         return fields
 
 
-def process_with_ai(raw_text: str, api_key=None) -> dict:
+def process_with_ai(
+    raw_text: str,
+    mode: str = "auto",
+    api_key: str = "",
+    ollama_port: int = OLLAMA_DEFAULT_PORT,
+    ollama_model: str = DEFAULT_OLLAMA_MODEL
+) -> dict:
     """
-    Full AI pipeline:
-    1. Classify document
-    2. Extract fields using AI
-    3. Validate & correct
+    Hybrid AI pipeline.
+    mode: 'cloud' | 'local' | 'auto'
+      auto → coba cloud (Groq), fallback local (Ollama)
     """
-    key = api_key or GROQ_API_KEY
-    if not key:
+
+    if ollama_model not in SUPPORTED_OLLAMA_MODELS:
+        ollama_model = DEFAULT_OLLAMA_MODEL
+
+    groq_available = bool(api_key)
+    ollama_ready = check_ollama_available(ollama_port) and check_model_exists(ollama_port, ollama_model)
+
+    def groq_caller(messages, max_tokens=1500):
+        return _call_groq(messages, api_key, max_tokens)
+
+    def ollama_caller(messages, max_tokens=1500):
+        return _call_ollama(messages, ollama_port, max_tokens, ollama_model)
+
+    if mode == "cloud":
+        if groq_available:
+            caller = groq_caller
+            model_label = "llama-3.1-8b-instant (Groq Cloud)"
+            mode_used = "cloud"
+        elif ollama_ready:
+            caller = ollama_caller
+            model_label = f"{ollama_model} (Ollama Lokal — fallback)"
+            mode_used = "local_fallback"
+        else:
+            return {
+                "ai_enabled": False,
+                "message": "Mode Cloud: tidak ada internet/API key, dan Ollama belum tersedia.",
+                "classification": None,
+                "fields": []
+            }
+
+    elif mode == "local":
+        if ollama_ready:
+            caller = ollama_caller
+            model_label = f"{ollama_model} (Ollama Lokal)"
+            mode_used = "local"
+        else:
+            return {
+                "ai_enabled": False,
+                "message": "Mode Lokal: Ollama belum siap atau model belum diunduh.",
+                "classification": None,
+                "fields": []
+            }
+
+    else:
+        if groq_available:
+            caller = groq_caller
+            model_label = "llama-3.1-8b-instant (Groq Cloud)"
+            mode_used = "cloud"
+        elif ollama_ready:
+            caller = ollama_caller
+            model_label = f"{ollama_model} (Ollama Lokal)"
+            mode_used = "local"
+        else:
+            return {
+                "ai_enabled": False,
+                "message": "AI tidak tersedia. Set Groq API Key atau unduh model Lokal.",
+                "classification": None,
+                "fields": []
+            }
+
+    try:
+        classification = classify_document(raw_text, caller, mode_used)
+        doc_type = classification.get("type", "invoice")
+
+        fields = extract_fields_ai(raw_text, doc_type, caller)
+
+        if fields and not any("error" in f for f in fields):
+            fields = validate_and_correct(fields, raw_text, caller)
+
+        return {
+            "ai_enabled": True,
+            "model": model_label,
+            "mode": mode_used,
+            "classification": classification,
+            "fields": fields,
+            "total_fields": len([f for f in fields if f.get("value")]),
+        }
+
+    except Exception as e:
         return {
             "ai_enabled": False,
-            "message": "No API key. Set key in Settings (⚙️ button).",
+            "error": str(e),
             "classification": None,
             "fields": []
         }
-
-    # Step 1: Classify
-    classification = classify_document(raw_text, api_key=key)
-    doc_type = classification.get("type", "invoice")
-
-    # Step 2: Extract
-    fields = extract_fields_ai(raw_text, doc_type, api_key=key)
-
-    # Step 3: Validate (skip if extraction failed)
-    if fields and not any("error" in f for f in fields):
-        fields = validate_and_correct(fields, raw_text, api_key=key)
-
-    return {
-        "ai_enabled": True,
-        "model": "llama-3.1-8b-instant (Groq)",
-        "classification": classification,
-        "fields": fields,
-        "total_fields": len([f for f in fields if f.get("value")]),
-    }

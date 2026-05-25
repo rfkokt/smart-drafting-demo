@@ -129,6 +129,58 @@
       animation: none;
     }
 
+    .header-status-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-status + .header-status {
+      padding-left: 12px;
+      border-left: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .ai-mode-toggle {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface-2);
+      color: var(--text);
+      position: relative;
+      user-select: none;
+    }
+    .ai-mode-toggle:hover { background: var(--surface-3, var(--border)); }
+
+    .ai-mode-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      width: 260px;
+      z-index: 500;
+    }
+
+    .ai-mode-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text);
+    }
+    .ai-mode-option:hover { background: var(--surface-2); }
+    .ai-mode-option.active { background: var(--accent-glow); }
+
     @keyframes glow {
       0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--success); }
       50% { opacity: 0.6; box-shadow: 0 0 4px var(--success); }
@@ -643,13 +695,53 @@
     </div>
     <div class="header-right">
       <div class="ai-badge" id="aiBadge">
-        <span>⚡</span> LLaMA 3.1 + Tesseract 5
-      </div>
-      <button class="btn btn-outline" id="btnToggleAi" onclick="toggleAi()" style="padding: 5px 10px; font-size: 10px;">🤖 AI: ON</button>
-      <button class="btn btn-outline" onclick="openSettings()" style="padding: 5px 10px; font-size: 10px;">⚙️ API Key</button>
-      <div class="header-status">
-        <span class="status-dot" id="statusDot"></span>
-        <span id="statusText">Connecting...</span>
+          <span>⚡</span> Ollama + Tesseract 5
+        </div>
+        <div class="ai-mode-toggle" id="aiModeToggle" onclick="toggleAiModeMenu()">
+          <span id="aiModeIcon">☁️</span>
+          <span id="aiModeLabel">Cloud</span>
+          <span style="font-size:9px; opacity:0.7;">▼</span>
+        </div>
+        <div class="ai-mode-menu" id="aiModeMenu" style="display:none;">
+          <div class="ai-mode-option" onclick="setAiMode('cloud')">
+            <span>☁️</span>
+            <div>
+              <div style="font-weight:600;">Cloud (Groq)</div>
+              <div style="font-size:10px;opacity:0.7;">Lebih cepat, butuh internet</div>
+            </div>
+          </div>
+          <div class="ai-mode-option" onclick="setAiMode('local')">
+            <span>🖥️</span>
+            <div>
+              <div style="font-weight:600;">Lokal (Ollama)</div>
+              <div style="font-size:10px;opacity:0.7;">Offline, lebih lambat</div>
+            </div>
+          </div>
+          <div style="padding: 8px 12px; border-top: 1px solid var(--border);">
+            <label style="font-size:10px;color:var(--text-secondary);display:block;margin-bottom:4px;">Groq API Key</label>
+            <input type="password" id="groqKeyInput" placeholder="gsk_xxx..." style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:11px;font-family:var(--mono);background:var(--surface-2);color:var(--text);" oninput="saveGroqKey()" />
+            <div style="font-size:9px;color:var(--text-muted);margin-top:4px;">Dapatkan key gratis di console.groq.com/keys</div>
+          </div>
+          <div style="padding: 8px 12px; border-top: 1px solid var(--border);">
+            <label style="font-size:10px;color:var(--text-secondary);display:block;margin-bottom:4px;">Model Lokal</label>
+            <select id="localModelSelect" onchange="setLocalModel(this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:11px;background:var(--surface-2);color:var(--text);">
+              <option value="qwen2.5:1.5b">qwen2.5:1.5b — Fast (~986MB)</option>
+              <option value="gemma2:2b">gemma2:2b — Light (~1.6GB)</option>
+              <option value="qwen2.5:3b">qwen2.5:3b — Recommended (~1.9GB)</option>
+              <option value="phi3.5:3.8b">phi3.5:3.8b — Reasoning (~2.2GB)</option>
+              <option value="qwen2.5:7b">qwen2.5:7b — High Accuracy (~4.7GB)</option>
+            </select>
+          </div>
+        </div>
+      <div class="header-status-group">
+        <div class="header-status">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">OCR...</span>
+        </div>
+        <div class="header-status">
+          <span class="status-dot" id="internetDot"></span>
+          <span id="internetText">Internet...</span>
+        </div>
       </div>
     </div>
   </header>
@@ -840,7 +932,7 @@
       });
     });
 
-    // Backend check
+    // Backend / OCR status check
     async function checkBackend() {
       try {
         const result = await fetch("/health").then(r=>r.json()).catch(()=>({status:"offline"}));
@@ -848,18 +940,49 @@
         const text = document.getElementById('statusText');
         if (result.status === 'ok') {
           dot.className = 'status-dot';
-          text.textContent = 'Online';
+          text.textContent = 'OCR Siap';
         } else {
           dot.className = 'status-dot offline';
-          text.textContent = 'Offline';
+          text.textContent = 'OCR Error';
         }
       } catch (e) {
         document.getElementById('statusDot').className = 'status-dot offline';
-        document.getElementById('statusText').textContent = 'Error';
+        document.getElementById('statusText').textContent = 'OCR Error';
       }
     }
     checkBackend();
     setInterval(checkBackend, 5000);
+
+    // Internet status check
+    function updateInternetStatus() {
+      const dot = document.getElementById('internetDot');
+      const text = document.getElementById('internetText');
+      const online = navigator.onLine;
+      if (online) {
+        dot.className = 'status-dot';
+        text.textContent = 'Internet';
+      } else {
+        dot.className = 'status-dot offline';
+        text.textContent = 'Offline';
+      }
+      const btnAi = document.getElementById('btnToggleAi');
+      if (btnAi) {
+        if (!online) {
+          btnAi.disabled = true;
+          btnAi.title = 'Butuh internet untuk AI Cloud (Groq)';
+          btnAi.style.opacity = '0.4';
+          btnAi.style.cursor = 'not-allowed';
+        } else {
+          btnAi.disabled = false;
+          btnAi.title = '';
+          btnAi.style.opacity = '';
+          btnAi.style.cursor = '';
+        }
+      }
+    }
+    updateInternetStatus();
+    window.addEventListener('online', updateInternetStatus);
+    window.addEventListener('offline', updateInternetStatus);
 
     // File selection
     async function handleSelectFile() {
@@ -1481,76 +1604,72 @@
     async function extractDocumentWeb() {
       const formData = new FormData();
       formData.append("file", selectedFileObj);
-      const headers = {};
-      if (!aiDisabled) {
-        const apiKey = localStorage.getItem('groq_api_key') || '';
-        if (apiKey) headers['X-Groq-API-Key'] = apiKey;
-      }
+      const headers = {
+        'X-AI-Mode': currentAiMode,
+        'X-Ollama-Port': '11435',
+        'X-Ollama-Model': selectedLocalModel
+      };
+      const apiKey = localStorage.getItem('groq_api_key') || '';
+      if (apiKey && currentAiMode !== 'local') headers['X-Groq-API-Key'] = apiKey;
       const resp = await fetch("/extract", { method: "POST", body: formData, headers });
       return await resp.json();
     }
 
-    // AI Toggle
-    let aiDisabled = localStorage.getItem('ai_disabled') === 'true';
+    // AI Mode
+    let currentAiMode = localStorage.getItem('ai_mode') || 'cloud';
+    let selectedLocalModel = localStorage.getItem('local_ai_model') || 'qwen2.5:3b';
 
-    function toggleAi() {
-      aiDisabled = !aiDisabled;
-      localStorage.setItem('ai_disabled', aiDisabled);
-      updateAiToggleButton();
+    function setAiMode(mode) {
+      currentAiMode = mode;
+      localStorage.setItem('ai_mode', mode);
+      updateAiModeUI();
+      document.getElementById('aiModeMenu').style.display = 'none';
     }
 
-    function updateAiToggleButton() {
-      const btn = document.getElementById('btnToggleAi');
-      if (aiDisabled) {
-        btn.textContent = '🤖 AI: OFF';
-        btn.style.background = 'var(--danger-bg)';
-        btn.style.borderColor = 'var(--danger-border)';
-        btn.style.color = 'var(--danger)';
+    function setLocalModel(model) {
+      selectedLocalModel = model;
+      localStorage.setItem('local_ai_model', model);
+      updateAiModeUI();
+    }
+
+    function toggleAiModeMenu() {
+      const menu = document.getElementById('aiModeMenu');
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function saveGroqKey() {
+      const key = document.getElementById('groqKeyInput').value.trim();
+      if (key) localStorage.setItem('groq_api_key', key);
+      else localStorage.removeItem('groq_api_key');
+    }
+
+    function updateAiModeUI() {
+      const icon = document.getElementById('aiModeIcon');
+      const label = document.getElementById('aiModeLabel');
+      const keyInput = document.getElementById('groqKeyInput');
+      const modelSelect = document.getElementById('localModelSelect');
+      if (currentAiMode === 'cloud') {
+        icon.textContent = '☁️';
+        label.textContent = 'Cloud';
       } else {
-        btn.textContent = '🤖 AI: ON';
-        btn.style.background = 'var(--success-bg)';
-        btn.style.borderColor = 'var(--success-border)';
-        btn.style.color = 'var(--success)';
+        icon.textContent = '🖥️';
+        label.textContent = 'Lokal';
       }
+      if (keyInput) keyInput.value = localStorage.getItem('groq_api_key') || '';
+      if (modelSelect) modelSelect.value = selectedLocalModel;
+      document.querySelectorAll('.ai-mode-option').forEach((el, i) => {
+        el.classList.toggle('active', (i === 0 && currentAiMode === 'cloud') || (i === 1 && currentAiMode === 'local'));
+      });
     }
-    updateAiToggleButton();
+    updateAiModeUI();
 
-    // Settings modal
-    function openSettings() {
-      document.getElementById('settingsModal').style.display = 'flex';
-      document.getElementById('apiKeyInput').value = localStorage.getItem('groq_api_key') || '';
-    }
-
-    function closeSettings() {
-      document.getElementById('settingsModal').style.display = 'none';
-    }
-
-    function saveApiKey() {
-      const key = document.getElementById('apiKeyInput').value.trim();
-      if (key) {
-        localStorage.setItem('groq_api_key', key);
-      } else {
-        localStorage.removeItem('groq_api_key');
+    document.addEventListener('click', (e) => {
+      const toggle = document.getElementById('aiModeToggle');
+      const menu = document.getElementById('aiModeMenu');
+      if (menu && toggle && !toggle.contains(e.target) && !menu.contains(e.target)) {
+        menu.style.display = 'none';
       }
-      updateAiBadge();
-      closeSettings();
-    }
-
-    function updateAiBadge() {
-      const key = localStorage.getItem('groq_api_key');
-      if (key) {
-        document.getElementById('aiBadge').innerHTML = '<span>⚡</span> AI: Key Set';
-        document.getElementById('aiBadge').style.background = 'var(--success-bg)';
-        document.getElementById('aiBadge').style.borderColor = 'var(--success-border)';
-        document.getElementById('aiBadge').style.color = 'var(--success)';
-      } else {
-        document.getElementById('aiBadge').innerHTML = '<span>⚡</span> AI: No Key';
-        document.getElementById('aiBadge').style.background = 'var(--warning-bg)';
-        document.getElementById('aiBadge').style.borderColor = 'var(--warning-border)';
-        document.getElementById('aiBadge').style.color = 'var(--warning)';
-      }
-    }
-    updateAiBadge();
+    });
 
     // Utils
     function formatFileSize(bytes) {
@@ -1561,26 +1680,5 @@
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
   </script>
 
-  <!-- Settings Modal -->
-  <div id="settingsModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
-    <div style="background: var(--surface); border-radius: var(--radius); padding: 24px; width: 420px; max-width: 90vw; box-shadow: var(--shadow); border: 1px solid var(--border);">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <h3 style="font-size: 14px; font-weight: 600;">⚙️ Pengaturan API Key</h3>
-        <button onclick="closeSettings()" style="background: none; border: none; font-size: 18px; cursor: pointer; color: var(--text-muted);">✕</button>
-      </div>
-      <div style="margin-bottom: 12px;">
-        <label style="font-size: 11px; color: var(--text-secondary); display: block; margin-bottom: 4px;">Groq API Key</label>
-        <input type="password" id="apiKeyInput" placeholder="gsk_xxxxxxxxxxxxxxxxxxxxxxxx" style="width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; font-family: var(--mono); outline: none; background: var(--surface-2);" />
-      </div>
-      <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.6;">
-        <p>Dapatkan API key gratis di <a href="https://console.groq.com/keys" target="_blank" style="color: var(--accent-light);">console.groq.com/keys</a></p>
-        <p style="margin-top: 4px;">Key disimpan di browser (localStorage), tidak dikirim ke server lain selain Groq.</p>
-      </div>
-      <div style="display: flex; gap: 8px; justify-content: flex-end;">
-        <button class="btn btn-outline" onclick="closeSettings()">Batal</button>
-        <button class="btn btn-primary" onclick="saveApiKey()">💾 Simpan</button>
-      </div>
-    </div>
-  </div>
 </body>
 </html>
