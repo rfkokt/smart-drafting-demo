@@ -181,6 +181,39 @@
     .ai-mode-option:hover { background: var(--surface-2); }
     .ai-mode-option.active { background: var(--accent-glow); }
 
+    .spinner-dots {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .spinner-dots span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-light);
+      animation: dotBounce 1.4s infinite ease-in-out both;
+    }
+
+    .spinner-dots span:nth-child(1) { animation-delay: 0s; }
+    .spinner-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .spinner-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes dotBounce {
+      0%, 80%, 100% { transform: scale(0.4); opacity: 0.4; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+
+    .dot-anim {
+      animation: dotFade 1.5s infinite;
+    }
+
+    @keyframes dotFade {
+      0% { opacity: 0.2; }
+      50% { opacity: 1; }
+      100% { opacity: 0.2; }
+    }
+
     #downloadOverlay {
       position: fixed;
       inset: 0;
@@ -396,9 +429,6 @@
     .actions { margin-top: 14px; display: flex; gap: 8px; }
 
     /* Progress */
-    .progress-container { margin-top: 18px; display: none; }
-    .progress-container.active { display: block; }
-
     .progress-bar-wrapper {
       height: 4px;
       background: var(--surface-3);
@@ -776,18 +806,7 @@
           </button>
         </div>
 
-        <div class="progress-container" id="progressContainer">
-          <div class="progress-bar-wrapper">
-            <div class="progress-bar" id="progressBar" style="width: 0%"></div>
-          </div>
-          <ul class="progress-steps">
-            <li id="step1">○ Membaca dokumen...</li>
-            <li id="step2">○ Pre-processing (CLAHE + denoise)...</li>
-            <li id="step3">○ OCR extraction (Tesseract 5)...</li>
-            <li id="step4">○ AI field extraction (LLaMA 3.1)...</li>
-            <li id="step5">○ Confidence scoring & validation...</li>
-          </ul>
-        </div>
+
 
         <div class="pipeline-info" style="margin-top: 18px;">
           <h4>🧠 Pipeline</h4>
@@ -822,6 +841,31 @@
           <p>Upload dokumen dan klik "Proses Ekstraksi"<br>untuk melihat hasil OCR + AI di sini</p>
         </div>
 
+        <!-- Processing overlay - centered in results panel -->
+        <div id="processingOverlay" style="display: none; height: 100%; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 20px;">
+          <div style="margin-bottom: 20px;">
+            <div class="spinner-dots" style="justify-content: center; margin-bottom: 14px;"><span></span><span></span><span></span></div>
+            <div style="font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 6px;" id="processingTitle">Memproses dokumen...</div>
+            <div style="font-size: 11px; color: var(--text-muted);" id="processingSubtitle">Mohon tunggu sebentar</div>
+          </div>
+          <div style="width: 100%; max-width: 320px;">
+            <div class="progress-bar-wrapper" style="margin-bottom: 16px;">
+              <div class="progress-bar" id="progressBarCenter" style="width: 0%"></div>
+            </div>
+            <ul class="progress-steps" style="text-align: left;">
+              <li id="stepC1">○ Membaca dokumen...</li>
+              <li id="stepC2">○ Pre-processing (CLAHE + denoise)...</li>
+              <li id="stepC3">○ OCR extraction (Tesseract 5)...</li>
+              <li id="stepC4">○ AI field extraction (LLaMA 3.1)...</li>
+              <li id="stepC5">○ Confidence scoring & validation...</li>
+            </ul>
+            <div id="waitingIndicatorCenter" style="display: none; margin-top: 14px; padding: 10px 14px; background: var(--accent-glow); border-radius: 8px; border: 1px solid rgba(79,70,229,0.15); align-items: center; gap: 10px; justify-content: center;">
+              <div class="spinner-dots"><span></span><span></span><span></span></div>
+              <div style="font-size: 11px; color: var(--accent-light);">Menunggu response AI engine<span class="dot-anim">...</span></div>
+            </div>
+          </div>
+        </div>
+
         <div id="resultsContent" style="display: none;">
           <div class="overall-confidence" id="overallConfidence">
             <div class="confidence-circle high" id="confidenceCircle">--%</div>
@@ -852,17 +896,20 @@
           </div>
 
           <div class="tabs">
-            <button class="tab-btn active" id="tabFields" onclick="switchTab('fields')">📋 Fields</button>
+            <button class="tab-btn active" id="tabCompare" onclick="switchTab('compare')">⚡ OCR vs AI</button>
             <button class="tab-btn" id="tabForm" onclick="switchTab('form')">📝 Form</button>
-            <button class="tab-btn" id="tabAi" onclick="switchTab('ai')">🤖 AI</button>
+            <button class="tab-btn" id="tabFields" onclick="switchTab('fields')">📋 OCR Only</button>
+            <button class="tab-btn" id="tabAi" onclick="switchTab('ai')">🤖 AI Detail</button>
           </div>
 
-          <div id="panelFields"><ul class="field-list" id="fieldList"></ul></div>
+          <div id="panelCompare"><div id="compareContent"></div></div>
+
+          <div id="panelFields" style="display: none;"><ul class="field-list" id="fieldList"></ul></div>
 
           <div id="panelForm" style="display: none;">
             <div style="padding: 10px 12px; background: var(--success-bg); border-radius: 8px; margin-bottom: 12px; border: 1px solid var(--success-border);">
               <div style="font-size: 10px; color: var(--success); font-weight: 600;">✅ Form Pengajuan Impor — Otomatis Terisi</div>
-              <div style="font-size: 10px; color: var(--text-secondary); margin-top: 2px;">Hijau = auto-filled · Kuning = review · Merah = manual</div>
+              <div style="font-size: 10px; color: var(--text-secondary); margin-top: 2px;">Jenis form dipilih otomatis berdasarkan AI Classification dokumen yang di-upload</div>
             </div>
             <div id="autoFillForm"></div>
           </div>
@@ -927,7 +974,11 @@
       const file = await window.smartDrafting.selectFile();
       if (!file) return;
       selectedFile = file;
+      showFileInfo(file);
+    }
 
+    function showFileInfo(file) {
+      document.getElementById('uploadArea').style.display = 'none';
       document.getElementById('fileInfo').style.display = 'flex';
       document.getElementById('fileName').textContent = file.name;
       document.getElementById('fileSize').textContent = formatFileSize(file.size) + ' · ' + file.extension.toUpperCase();
@@ -936,11 +987,13 @@
       document.getElementById('btnReset').style.display = 'inline-flex';
 
       const previewDiv = document.getElementById('imagePreview');
-      const previewImg = document.getElementById('previewImg');
       const imageExts = ['.png', '.jpg', '.jpeg', '.tiff', '.bmp'];
       if (imageExts.includes(file.extension)) {
-        previewImg.src = 'file://' + file.path;
-        previewImg.style.display = 'block';
+        previewDiv.innerHTML = '<img id="previewImg" src="" style="width:100%;height:auto;max-height:100%;object-fit:contain;" />';
+        document.getElementById('previewImg').src = 'file://' + file.path;
+        previewDiv.style.display = 'block';
+      } else if (file.extension === '.pdf') {
+        previewDiv.innerHTML = '<div style="padding: 16px; text-align: center;"><div style="font-size: 28px; margin-bottom: 6px;">📕</div><div style="font-size: 11px; color: var(--text-muted);">' + file.name + '</div></div>';
         previewDiv.style.display = 'block';
       } else {
         previewDiv.style.display = 'block';
@@ -954,41 +1007,79 @@
       isProcessing = true;
       document.getElementById('btnExtract').disabled = true;
 
-      const progressContainer = document.getElementById('progressContainer');
-      progressContainer.classList.add('active');
+      // Hide empty state, show processing overlay in results panel (centered)
+      document.getElementById('emptyState').style.display = 'none';
+      document.getElementById('resultsContent').style.display = 'none';
+      const overlay = document.getElementById('processingOverlay');
+      overlay.style.display = 'flex';
+
+      // Reset steps
+      const stepIds = ['stepC1','stepC2','stepC3','stepC4','stepC5'];
+      const stepLabels = ['Membaca dokumen...','Pre-processing (CLAHE + denoise)...','OCR extraction (Tesseract 5)...','AI field extraction (LLaMA 3.1)...','Confidence scoring & validation...'];
+      stepIds.forEach((id, i) => { const el = document.getElementById(id); el.className = ''; el.textContent = '○ ' + stepLabels[i]; });
+      document.getElementById('progressBarCenter').style.width = '0%';
+      document.getElementById('processingTitle').textContent = 'Memproses dokumen...';
+      document.getElementById('processingSubtitle').textContent = 'Mohon tunggu sebentar';
+
+      // Run progress animation and API call in parallel
+      const apiPromise = window.smartDrafting.extractDocument({
+        filePath: selectedFile.path,
+        aiMode: currentAiMode,
+        apiKey: localStorage.getItem('groq_api_key') || '',
+        ollamaModel: selectedLocalModel
+      });
       await animateProgress();
 
+      // After steps done, show waiting spinner until API responds
+      showWaitingState();
+
       try {
-        const result = await window.smartDrafting.extractDocument({
-          filePath: selectedFile.path,
-          aiMode: currentAiMode,
-          apiKey: localStorage.getItem('groq_api_key') || '',
-          ollamaModel: selectedLocalModel
-        });
+        const result = await apiPromise;
+        hideWaitingState();
+        overlay.style.display = 'none';
         if (result.error) {
           alert('Error: ' + result.error);
           isProcessing = false;
           document.getElementById('btnExtract').disabled = false;
-          progressContainer.classList.remove('active');
+          document.getElementById('emptyState').style.display = 'flex';
           return;
         }
         displayResults(result);
       } catch (e) {
+        hideWaitingState();
+        overlay.style.display = 'none';
+        document.getElementById('emptyState').style.display = 'flex';
         alert('Error: ' + e.message);
       }
       isProcessing = false;
       document.getElementById('btnExtract').disabled = false;
     }
 
+    function showWaitingState() {
+      document.getElementById('processingTitle').textContent = 'Menunggu response AI engine...';
+      document.getElementById('processingSubtitle').textContent = 'AI sedang menganalisis dan mengekstrak data dari dokumen';
+      const waitEl = document.getElementById('waitingIndicatorCenter');
+      waitEl.style.display = 'flex';
+      document.getElementById('progressBarCenter').style.animation = 'shimmer 1s infinite linear';
+    }
+
+    function hideWaitingState() {
+      const waitEl = document.getElementById('waitingIndicatorCenter');
+      waitEl.style.display = 'none';
+      document.getElementById('progressBarCenter').style.animation = '';
+    }
+
     async function animateProgress() {
-      const steps = ['step1', 'step2', 'step3', 'step4', 'step5'];
-      const bar = document.getElementById('progressBar');
+      const steps = ['stepC1', 'stepC2', 'stepC3', 'stepC4', 'stepC5'];
+      const titles = ['Membaca dokumen...', 'Pre-processing gambar...', 'Menjalankan OCR engine...', 'AI sedang mengekstrak field...', 'Validasi & scoring...'];
+      const bar = document.getElementById('progressBarCenter');
       for (let i = 0; i < steps.length; i++) {
         const step = document.getElementById(steps[i]);
         step.className = 'active';
         step.textContent = '⟳ ' + step.textContent.substring(2);
         bar.style.width = ((i + 1) / steps.length * 100) + '%';
-        await sleep(500);
+        document.getElementById('processingTitle').textContent = titles[i];
+        await sleep(600);
         step.className = 'done';
         step.textContent = '✓ ' + step.textContent.substring(2);
       }
@@ -1018,7 +1109,13 @@
         aiDiv.style.display = 'block';
         const cls = result.ai.classification;
         const typeLabel = {'invoice':'📄 Invoice','bill_of_lading':'🚢 Bill of Lading','packing_list':'📦 Packing List','unknown':'❓ Unknown'};
-        document.getElementById('aiClassText').innerHTML = '<strong>' + (typeLabel[cls.type]||cls.type) + '</strong> · ' + cls.confidence + '% · ' + (cls.reason||'');
+        const formRecommendation = {
+          'invoice': '→ Digunakan untuk pengisian <strong>BC 2.0 (PIB - Pemberitahuan Impor Barang)</strong> bagian Data Invoice, Supplier, dan Nilai Pabean',
+          'bill_of_lading': '→ Digunakan untuk pengisian <strong>BC 2.0 (PIB)</strong> bagian Data Pengangkutan, Pelabuhan, dan Container',
+          'packing_list': '→ Digunakan untuk pengisian <strong>BC 2.0 (PIB)</strong> bagian Data Kemasan, Berat, dan Jumlah Barang',
+          'unknown': '→ Dokumen tidak dikenali, silakan pilih form secara manual'
+        };
+        document.getElementById('aiClassText').innerHTML = '<strong>' + (typeLabel[cls.type]||cls.type) + '</strong> · ' + cls.confidence + '% · ' + (cls.reason||'') + '<div style="margin-top: 6px; padding: 6px 10px; background: var(--surface-2); border-radius: 6px; font-size: 11px; color: var(--text-secondary); border-left: 2px solid var(--accent-light);">' + (formRecommendation[cls.type]||'') + '</div>';
       }
 
       // Summary
@@ -1042,11 +1139,13 @@
 
       buildAutoFillForm(allFields, result.ai);
       buildAiPanel(result.ai);
+      buildComparePanel(result.fields, result.ai);
     }
 
-    // Auto-fill form
+    // Auto-fill form - DYNAMIC based on document type
     function buildAutoFillForm(fields, aiResult) {
       const container = document.getElementById('autoFillForm');
+      const aiEnabled = aiResult && aiResult.ai_enabled;
       const sourceFields = (aiResult && aiResult.ai_enabled && aiResult.fields && aiResult.fields.length > 0)
         ? aiResult.fields.filter(f => f.value) : fields;
 
@@ -1054,40 +1153,136 @@
       sourceFields.forEach(f => {
         const key = (f.field || f.label || '').toLowerCase().replace(/[\s/]+/g, '_');
         fieldMap[key] = f;
+        const shortKey = key.replace(/_kg$/, '').replace(/_cbm$/, '');
+        if (!fieldMap[shortKey]) fieldMap[shortKey] = f;
       });
 
-      const formSections = [
-        { title: '🏢 Data Perusahaan', fields: [
-          { key: 'supplier_name', label: 'Nama Supplier / Shipper', map: ['supplier_name','supplier___shipper','shipper'] },
-          { key: 'consignee', label: 'Consignee / Importir', map: ['consignee','consignee___buyer'] },
-          { key: 'country_origin', label: 'Negara Asal', map: ['country_of_origin','country_origin'] },
-        ]},
-        { title: '📄 Data Dokumen', fields: [
-          { key: 'invoice_number', label: 'Nomor Invoice', map: ['invoice_number'] },
-          { key: 'invoice_date', label: 'Tanggal Invoice', map: ['invoice_date'] },
-          { key: 'bl_number', label: 'Nomor B/L', map: ['bl_number'] },
-          { key: 'currency', label: 'Mata Uang', map: ['currency'] },
-          { key: 'total_amount', label: 'Total Nilai', map: ['total_amount'] },
-        ]},
-        { title: '🚢 Pengangkutan', fields: [
-          { key: 'vessel_name', label: 'Nama Kapal', map: ['vessel_name'] },
-          { key: 'port_of_loading', label: 'Pelabuhan Muat', map: ['port_of_loading'] },
-          { key: 'port_of_discharge', label: 'Pelabuhan Bongkar', map: ['port_of_discharge'] },
-        ]},
-        { title: '📦 Data Barang', fields: [
-          { key: 'hs_code', label: 'Kode HS', map: ['hs_code'] },
-          { key: 'quantity', label: 'Jumlah Barang', map: ['quantity'] },
-          { key: 'weight', label: 'Berat (KG)', map: ['weight','weight_(kg)'] },
-        ]},
-      ];
+      // Detect document type from AI classification
+      const docType = (aiResult && aiResult.classification && aiResult.classification.type) || 'invoice';
+
+      // Different form structures per document type
+      const formTemplates = {
+        invoice: {
+          title: '📄 Form Pengajuan Impor — Commercial Invoice',
+          icon: '📄',
+          sections: [
+            { title: '🏢 Data Perusahaan', fields: [
+              { key: 'supplier_name', label: 'Nama Supplier / Shipper', map: ['supplier_name','supplier___shipper','shipper'] },
+              { key: 'consignee', label: 'Consignee / Importir', map: ['consignee','consignee___buyer'] },
+              { key: 'country_origin', label: 'Negara Asal', map: ['country_of_origin','country_origin'] },
+            ]},
+            { title: '📄 Data Invoice', fields: [
+              { key: 'invoice_number', label: 'Nomor Invoice', map: ['invoice_number'] },
+              { key: 'invoice_date', label: 'Tanggal Invoice', map: ['invoice_date'] },
+              { key: 'currency', label: 'Mata Uang', map: ['currency'] },
+              { key: 'total_amount', label: 'Total Nilai Invoice', map: ['total_amount'] },
+              { key: 'terms_of_payment', label: 'Terms of Payment', map: ['terms_of_payment'] },
+              { key: 'incoterms', label: 'Incoterms', map: ['incoterms'] },
+            ]},
+            { title: '📦 Data Barang', fields: [
+              { key: 'hs_code', label: 'Kode HS (Pos Tarif)', map: ['hs_code'] },
+              { key: 'description', label: 'Uraian Barang', map: ['description_of_goods','description'] },
+              { key: 'quantity', label: 'Jumlah Barang', map: ['quantity'] },
+              { key: 'weight', label: 'Berat Kotor (KG)', map: ['weight','weight_kg','weight_(kg)','gross_weight_kg'] },
+            ]},
+          ]
+        },
+        bill_of_lading: {
+          title: '🚢 Form Pengajuan Impor — Bill of Lading',
+          icon: '🚢',
+          sections: [
+            { title: '🏢 Pihak Terkait', fields: [
+              { key: 'shipper', label: 'Shipper / Pengirim', map: ['shipper','supplier_name','supplier___shipper'] },
+              { key: 'consignee', label: 'Consignee / Penerima', map: ['consignee','consignee___buyer'] },
+              { key: 'notify_party', label: 'Notify Party', map: ['notify_party'] },
+            ]},
+            { title: '📋 Data B/L', fields: [
+              { key: 'bl_number', label: 'Nomor B/L', map: ['bl_number'] },
+              { key: 'date_of_issue', label: 'Tanggal Terbit', map: ['date_of_issue','invoice_date'] },
+              { key: 'place_of_issue', label: 'Tempat Terbit', map: ['place_of_issue'] },
+              { key: 'freight_status', label: 'Status Freight', map: ['freight_status'] },
+            ]},
+            { title: '🚢 Data Kapal & Rute', fields: [
+              { key: 'vessel_name', label: 'Nama Kapal / Vessel', map: ['vessel_name'] },
+              { key: 'voyage_number', label: 'Nomor Voyage', map: ['voyage_number'] },
+              { key: 'port_of_loading', label: 'Pelabuhan Muat (POL)', map: ['port_of_loading'] },
+              { key: 'port_of_discharge', label: 'Pelabuhan Bongkar (POD)', map: ['port_of_discharge'] },
+            ]},
+            { title: '📦 Data Kargo', fields: [
+              { key: 'container_number', label: 'Nomor Container', map: ['container_number'] },
+              { key: 'description', label: 'Uraian Barang', map: ['description_of_goods','description'] },
+              { key: 'total_packages', label: 'Jumlah Kemasan', map: ['total_packages','quantity'] },
+              { key: 'gross_weight', label: 'Berat Kotor (KG)', map: ['gross_weight_kg','weight','weight_kg','weight_(kg)'] },
+              { key: 'measurement', label: 'Measurement (CBM)', map: ['measurement_cbm','measurement'] },
+            ]},
+          ]
+        },
+        packing_list: {
+          title: '📦 Form Pengajuan Impor — Packing List',
+          icon: '📦',
+          sections: [
+            { title: '🏢 Data Perusahaan', fields: [
+              { key: 'shipper', label: 'Shipper / Pengirim', map: ['shipper','supplier_name'] },
+              { key: 'consignee', label: 'Consignee / Penerima', map: ['consignee','consignee___buyer'] },
+            ]},
+            { title: '📋 Data Dokumen', fields: [
+              { key: 'invoice_number', label: 'Referensi Invoice', map: ['invoice_number'] },
+              { key: 'date', label: 'Tanggal', map: ['date','invoice_date'] },
+              { key: 'marks', label: 'Marks & Numbers', map: ['marks_and_numbers'] },
+            ]},
+            { title: '📦 Data Kemasan', fields: [
+              { key: 'description', label: 'Uraian Barang', map: ['description_of_goods','description'] },
+              { key: 'total_packages', label: 'Total Kemasan', map: ['total_packages','quantity'] },
+              { key: 'gross_weight', label: 'Berat Kotor (KG)', map: ['total_gross_weight_kg','gross_weight_kg','weight'] },
+              { key: 'net_weight', label: 'Berat Bersih (KG)', map: ['total_net_weight_kg','net_weight'] },
+              { key: 'measurement', label: 'Measurement (CBM)', map: ['total_measurement_cbm','measurement_cbm','measurement'] },
+            ]},
+          ]
+        }
+      };
+
+      // Get the right form template
+      const template = formTemplates[docType] || formTemplates['invoice'];
+      const formSections = template.sections;
 
       let html = '';
+
+      // Form type header
+      html += '<div style="padding: 10px 12px; background: var(--accent-glow); border-radius: 8px; margin-bottom: 14px; border: 1px solid rgba(79,70,229,0.15); display: flex; align-items: center; gap: 8px;"><span style="font-size: 20px;">' + template.icon + '</span><div><div style="font-size: 11px; font-weight: 600; color: var(--accent-light);">' + template.title + '</div><div style="font-size: 10px; color: var(--text-secondary);">Form ' + (aiEnabled ? 'otomatis dipilih berdasarkan AI Document Classification' : 'default (Invoice) — aktifkan AI untuk klasifikasi otomatis') + '</div></div></div>';
+
+      if (aiEnabled) {
+      // Classification info box
+      html += '<div style="padding: 10px 12px; background: var(--surface-2); border-radius: 8px; margin-bottom: 14px; border: 1px solid var(--border); font-size: 10px; color: var(--text-secondary); line-height: 1.7;">';
+      html += '<div style="font-weight: 600; color: var(--text); margin-bottom: 4px; font-size: 11px;">📚 Jenis Klasifikasi yang Didukung:</div>';
+      html += '<div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;">';
+      html += '<div style="padding: 6px 8px; border-radius: 6px; border: 1px solid ' + (docType==='invoice'?'var(--accent)':'var(--border)') + '; background: ' + (docType==='invoice'?'var(--accent-glow)':'var(--surface)') + ';"><div style="font-weight: 600; color: ' + (docType==='invoice'?'var(--accent-light)':'var(--text)') + ';">📄 Invoice</div><div style="font-size: 9px; margin-top: 2px;">Commercial Invoice → Data Supplier, Nilai Pabean, HS Code (17 fields)</div></div>';
+      html += '<div style="padding: 6px 8px; border-radius: 6px; border: 1px solid ' + (docType==='bill_of_lading'?'var(--accent)':'var(--border)') + '; background: ' + (docType==='bill_of_lading'?'var(--accent-glow)':'var(--surface)') + ';"><div style="font-weight: 600; color: ' + (docType==='bill_of_lading'?'var(--accent-light)':'var(--text)') + ';">🚢 Bill of Lading</div><div style="font-size: 9px; margin-top: 2px;">B/L → Data Kapal, Container, Rute Pengangkutan (16 fields)</div></div>';
+      html += '<div style="padding: 6px 8px; border-radius: 6px; border: 1px solid ' + (docType==='packing_list'?'var(--accent)':'var(--border)') + '; background: ' + (docType==='packing_list'?'var(--accent-glow)':'var(--surface)') + ';"><div style="font-weight: 600; color: ' + (docType==='packing_list'?'var(--accent-light)':'var(--text)') + ';">📦 Packing List</div><div style="font-size: 9px; margin-top: 2px;">PL → Data Kemasan, Berat, Measurement (10 fields)</div></div>';
+      html += '</div>';
+      html += '<div style="margin-top: 8px; font-size: 9px; color: var(--text-muted);">✔️ Dokumen yang di-upload terdeteksi sebagai <strong style="color: var(--accent-light);">' + (docType==='invoice'?'Commercial Invoice':docType==='bill_of_lading'?'Bill of Lading':'Packing List') + '</strong> — form di bawah otomatis menyesuaikan.</div>';
+      html += '</div>';
+
+      // How classification works
+      html += '<div style="padding: 10px 12px; background: var(--surface-2); border-radius: 8px; margin-bottom: 14px; border: 1px solid var(--border); border-left: 3px solid var(--accent); font-size: 10px; color: var(--text-secondary); line-height: 1.7;">';
+      html += '<div style="font-weight: 600; color: var(--accent-light); margin-bottom: 6px; font-size: 11px;">🧠 Bagaimana AI Menentukan Klasifikasi?</div>';
+      html += '<div style="margin-bottom: 6px;">AI membaca seluruh teks hasil OCR dan mencari <strong>pola keyword + struktur dokumen</strong> untuk menentukan jenis:</div>';
+      html += '<table style="width: 100%; font-size: 9px; border-collapse: collapse;">';
+      html += '<tr style="background: var(--surface-3);"><td style="padding: 4px 6px; font-weight: 600; border: 1px solid var(--border);">Jenis</td><td style="padding: 4px 6px; font-weight: 600; border: 1px solid var(--border);">Keyword yang Dicari AI</td><td style="padding: 4px 6px; font-weight: 600; border: 1px solid var(--border);">Mapping ke Form</td></tr>';
+      html += '<tr><td style="padding: 4px 6px; border: 1px solid var(--border);">📄 Invoice</td><td style="padding: 4px 6px; border: 1px solid var(--border); font-family: var(--mono);">"Invoice", "Total Amount", "Terms of Payment", "Unit Price", "HS Code"</td><td style="padding: 4px 6px; border: 1px solid var(--border);">BC 2.0 (PIB) → Data Invoice & Nilai Pabean</td></tr>';
+      html += '<tr><td style="padding: 4px 6px; border: 1px solid var(--border);">🚢 Bill of Lading</td><td style="padding: 4px 6px; border: 1px solid var(--border); font-family: var(--mono);">"Bill of Lading", "B/L", "Vessel", "Voyage", "Container", "Port of Loading"</td><td style="padding: 4px 6px; border: 1px solid var(--border);">BC 2.0 (PIB) → Data Pengangkutan</td></tr>';
+      html += '<tr><td style="padding: 4px 6px; border: 1px solid var(--border);">📦 Packing List</td><td style="padding: 4px 6px; border: 1px solid var(--border); font-family: var(--mono);">"Packing List", "Net Weight", "Gross Weight", "Measurement", "Cartons"</td><td style="padding: 4px 6px; border: 1px solid var(--border);">BC 2.0 (PIB) → Data Kemasan</td></tr>';
+      html += '</table>';
+      html += '<div style="margin-top: 6px; font-size: 9px; color: var(--text-muted);">AI tidak hanya mencocokkan keyword, tapi juga memahami <em>struktur dan konteks keseluruhan</em> dokumen (header, tabel, layout) untuk menentukan klasifikasi dengan confidence tinggi.</div>';
+      html += '</div>';
+      } // end if aiEnabled
+
       formSections.forEach(section => {
         html += '<div style="margin-bottom: 14px;"><div style="font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border);">' + section.title + '</div>';
         section.fields.forEach(ff => {
           let matched = null;
           for (const mk of ff.map) { if (fieldMap[mk]) { matched = fieldMap[mk]; break; } }
           if (!matched) { for (const [k,v] of Object.entries(fieldMap)) { if (ff.map.some(m => k.includes(m)||m.includes(k))) { matched = v; break; } } }
+          if (!matched) { for (const [k,v] of Object.entries(fieldMap)) { const kClean = k.replace(/_/g,''); if (ff.map.some(m => kClean.includes(m.replace(/_/g,''))||m.replace(/_/g,'').includes(kClean))) { matched = v; break; } } }
 
           const value = matched ? (matched.value||'') : '';
           const conf = matched ? (matched.confidence||0) : 0;
@@ -1133,26 +1328,223 @@
 
     // Tab switching
     function switchTab(tab) {
+      document.getElementById('panelCompare').style.display = 'none';
       document.getElementById('panelFields').style.display = 'none';
       document.getElementById('panelForm').style.display = 'none';
       document.getElementById('panelAi').style.display = 'none';
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
 
-      if (tab === 'fields') { document.getElementById('panelFields').style.display = 'block'; document.getElementById('tabFields').classList.add('active'); }
+      if (tab === 'compare') { document.getElementById('panelCompare').style.display = 'block'; document.getElementById('tabCompare').classList.add('active'); }
+      else if (tab === 'fields') { document.getElementById('panelFields').style.display = 'block'; document.getElementById('tabFields').classList.add('active'); }
       else if (tab === 'form') { document.getElementById('panelForm').style.display = 'block'; document.getElementById('tabForm').classList.add('active'); }
       else if (tab === 'ai') { document.getElementById('panelAi').style.display = 'block'; document.getElementById('tabAi').classList.add('active'); }
+    }
+
+    // Compare Panel - OCR vs AI side by side
+    function buildComparePanel(ocrFields, aiResult) {
+      const container = document.getElementById('compareContent');
+      const aiFields = (aiResult && aiResult.ai_enabled && aiResult.fields) ? aiResult.fields.filter(f => f.value) : [];
+      const aiEnabled = aiResult && aiResult.ai_enabled;
+
+      const fieldAliases = {
+        'supplier_name': 'supplier_name', 'supplier___shipper': 'supplier_name', 'shipper': 'supplier_name',
+        'consignee': 'consignee', 'consignee___buyer': 'consignee',
+        'weight': 'weight', 'weight_kg': 'weight', 'weight_(kg)': 'weight', 'gross_weight_kg': 'weight', 'gross_weight': 'weight',
+        'quantity': 'quantity', 'total_packages': 'quantity',
+        'country_origin': 'country_origin', 'country_of_origin': 'country_origin',
+        'invoice_date': 'invoice_date', 'date': 'invoice_date', 'date_of_issue': 'invoice_date',
+        'total_amount': 'total_amount', 'amount': 'total_amount',
+        'description_of_goods': 'description_of_goods', 'description': 'description_of_goods',
+        'measurement_cbm': 'measurement_cbm', 'measurement': 'measurement_cbm', 'total_measurement_cbm': 'measurement_cbm',
+        'total_gross_weight_kg': 'weight', 'total_net_weight_kg': 'net_weight',
+      };
+
+      function normalizeKey(key) {
+        const k = (key || '').toLowerCase().replace(/[\s/]+/g, '_');
+        return fieldAliases[k] || k;
+      }
+
+      const aiMap = {};
+      aiFields.forEach(f => {
+        const key = normalizeKey(f.field);
+        if (!aiMap[key] || (f.confidence||0) > (aiMap[key].confidence||0)) aiMap[key] = f;
+      });
+
+      const ocrMap = {};
+      ocrFields.forEach(f => {
+        const key = normalizeKey(f.field);
+        if (!ocrMap[key] || (f.confidence||0) > (ocrMap[key].confidence||0)) ocrMap[key] = f;
+      });
+
+      const allKeys = [...new Set([...Object.keys(ocrMap), ...Object.keys(aiMap)])];
+
+      let html = '';
+
+      html += '<div style="padding: 10px 12px; background: var(--blue-bg); border-radius: 8px; margin-bottom: 14px; border: 1px solid rgba(37,99,235,0.15);">';
+      html += '<div style="font-size: 10px; font-weight: 600; color: var(--blue);">⚡ Perbandingan: OCR (Regex) vs AI (LLM)</div>';
+      html += '<div style="font-size: 10px; color: var(--text-secondary); margin-top: 3px;">Kolom kiri = hasil OCR + regex pattern matching. Kolom kanan = hasil AI yang memahami konteks dokumen secara semantik.</div>';
+      html += '</div>';
+
+      const ocrCount = ocrFields.length;
+      const aiCount = aiFields.length;
+      const ocrAvgConf = ocrFields.length > 0 ? Math.round(ocrFields.reduce((s,f) => s + (f.confidence||0), 0) / ocrFields.length) : 0;
+      const aiAvgConf = aiFields.length > 0 ? Math.round(aiFields.reduce((s,f) => s + (f.confidence||0), 0) / aiFields.length) : 0;
+
+      html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px;">';
+      html += '<div style="padding: 12px; background: var(--surface-2); border-radius: 8px; border: 1px solid var(--border); text-align: center;">';
+      html += '<div style="font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 4px;">📝 OCR + Regex</div>';
+      html += '<div style="font-size: 20px; font-weight: 700; color: var(--warning);">' + ocrCount + ' <span style="font-size: 11px; font-weight: 400;">fields</span></div>';
+      html += '<div style="font-size: 10px; color: var(--text-muted);">Avg confidence: ' + ocrAvgConf + '%</div>';
+      html += '</div>';
+      html += '<div style="padding: 12px; background: var(--accent-glow); border-radius: 8px; border: 1px solid rgba(79,70,229,0.15); text-align: center;">';
+      html += '<div style="font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent-light); margin-bottom: 4px;">🤖 AI (LLaMA 3.1)</div>';
+      html += '<div style="font-size: 20px; font-weight: 700; color: var(--accent);">' + (aiEnabled ? aiCount : '—') + ' <span style="font-size: 11px; font-weight: 400;">' + (aiEnabled ? 'fields' : 'disabled') + '</span></div>';
+      html += '<div style="font-size: 10px; color: var(--text-muted);">' + (aiEnabled ? 'Avg confidence: ' + aiAvgConf + '%' : 'Set GROQ_API_KEY untuk aktifkan') + '</div>';
+      html += '</div>';
+      html += '</div>';
+
+      html += '<div style="display: grid; grid-template-columns: 2fr 3fr 3fr; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; font-size: 11px;">';
+      html += '<div style="padding: 8px 10px; background: var(--surface-3); font-weight: 600; font-size: 10px; color: var(--text-secondary); border-bottom: 1px solid var(--border);">Field</div>';
+      html += '<div style="padding: 8px 10px; background: var(--surface-3); font-weight: 600; font-size: 10px; color: var(--warning); border-bottom: 1px solid var(--border); border-left: 1px solid var(--border);">📝 OCR (Regex)</div>';
+      html += '<div style="padding: 8px 10px; background: var(--surface-3); font-weight: 600; font-size: 10px; color: var(--accent-light); border-bottom: 1px solid var(--border); border-left: 1px solid var(--border);">🤖 AI (LLM)</div>';
+
+      const fieldLabels = {
+        'supplier_name': 'Supplier / Shipper', 'consignee': 'Consignee / Buyer',
+        'weight': 'Berat Kotor (KG)', 'quantity': 'Quantity / Packages',
+        'country_origin': 'Country of Origin', 'invoice_number': 'Invoice Number',
+        'invoice_date': 'Tanggal', 'currency': 'Currency', 'total_amount': 'Total Amount',
+        'hs_code': 'HS Code', 'bl_number': 'B/L Number', 'vessel_name': 'Vessel Name',
+        'port_of_loading': 'Port of Loading', 'port_of_discharge': 'Port of Discharge',
+        'description_of_goods': 'Description of Goods', 'measurement_cbm': 'Measurement (CBM)',
+        'container_number': 'Container Number', 'voyage_number': 'Voyage Number',
+        'notify_party': 'Notify Party', 'freight_status': 'Freight Status',
+        'place_of_issue': 'Place of Issue', 'incoterms': 'Incoterms',
+        'terms_of_payment': 'Terms of Payment', 'net_weight': 'Berat Bersih (KG)',
+      };
+
+      const ocrFailReasons = {
+        'supplier_name': 'Tidak ada label "Shipper:" atau "Supplier:" yang cocok dengan regex pattern',
+        'consignee': 'Format label tidak sesuai pattern regex (misal: "To:" bukan "Consignee:")',
+        'weight': 'Tidak ada keyword "Gross Weight" diikuti angka dalam format yang dikenali',
+        'quantity': 'Tidak ada keyword "Qty" atau "Quantity" yang cocok pattern',
+        'country_origin': 'Tidak ada label "Country of Origin:" eksplisit di teks',
+        'container_number': 'Tidak ada regex pattern untuk container number',
+        'voyage_number': 'Tidak ada regex pattern untuk voyage number',
+        'notify_party': 'Tidak ada regex pattern untuk notify party',
+        'total_amount': 'Format angka atau label tidak cocok pattern regex',
+        'description_of_goods': 'Deskripsi terlalu panjang / multi-line, regex tidak bisa tangkap',
+        'freight_status': 'Tidak ada regex pattern untuk freight status',
+        'measurement_cbm': 'Tidak ada regex pattern untuk measurement CBM',
+        'place_of_issue': 'Tidak ada regex pattern untuk place of issue',
+        'incoterms': 'Tidak ada regex pattern untuk incoterms',
+        'terms_of_payment': 'Tidak ada regex pattern untuk terms of payment',
+        'net_weight': 'Tidak ada regex pattern khusus net weight',
+      };
+      const aiSuccessReasons = {
+        'supplier_name': 'AI memahami konteks: nama perusahaan di bagian atas dokumen = shipper',
+        'consignee': 'AI mengenali pola: perusahaan setelah "To" atau di section penerima',
+        'weight': 'AI memahami angka + satuan KGS di konteks pengiriman = berat',
+        'quantity': 'AI mengenali angka di kolom packages/quantity dari konteks tabel',
+        'country_origin': 'AI menyimpulkan dari alamat shipper atau port of loading',
+        'container_number': 'AI mengenali format XXXX1234567 sebagai container number (ISO 6346)',
+        'voyage_number': 'AI memahami kode setelah nama kapal = voyage number',
+        'notify_party': 'AI mengenali section "Notify" dan extract nama perusahaan di bawahnya',
+        'total_amount': 'AI memahami angka terbesar dengan currency = total amount',
+        'description_of_goods': 'AI bisa membaca multi-line dan memahami konteks barang',
+        'freight_status': 'AI mengenali kata "Prepaid"/"Collect" sebagai freight status',
+        'measurement_cbm': 'AI memahami angka + CBM di konteks dimensi kargo',
+        'place_of_issue': 'AI mengenali nama kota di akhir dokumen = tempat terbit',
+        'incoterms': 'AI mengenali kode standar (FOB/CIF/CFR) dari konteks perdagangan',
+        'terms_of_payment': 'AI memahami frasa "T/T", "L/C", "30 days" sebagai payment terms',
+        'net_weight': 'AI membedakan gross vs net weight dari label kontekstual',
+      };
+
+      allKeys.forEach((key, i) => {
+        const ocr = ocrMap[key];
+        const ai = aiMap[key];
+        const label = fieldLabels[key] || (ocr && ocr.label) || key.replace(/_/g, ' ');
+        const borderTop = i > 0 ? 'border-top: 1px solid var(--border);' : '';
+
+        const ocrVal = ocr ? ocr.value : '';
+        const ocrConf = ocr ? ocr.confidence : 0;
+        const aiVal = ai ? ai.value : '';
+        const aiConf = ai ? (ai.confidence || 0) : 0;
+
+        const ocrColor = ocrConf >= 90 ? 'var(--success)' : ocrConf >= 70 ? 'var(--warning)' : 'var(--danger)';
+        const aiColor = aiConf >= 90 ? 'var(--success)' : aiConf >= 70 ? 'var(--warning)' : 'var(--danger)';
+        const aiExtra = (!ocrVal && aiVal) ? 'background: rgba(79,70,229,0.04);' : '';
+
+        html += '<div style="padding: 7px 10px; font-size: 10px; color: var(--text-secondary); ' + borderTop + ' display: flex; align-items: center;">' + label + '</div>';
+
+        html += '<div style="padding: 7px 10px; border-left: 1px solid var(--border); ' + borderTop + ' font-family: var(--mono); font-size: 10px;">';
+        if (ocrVal) {
+          html += '<span style="color: var(--text);">' + ocrVal + '</span> <span style="color: ' + ocrColor + '; font-size: 9px;">' + ocrConf + '%</span>';
+        } else {
+          html += '<span style="color: var(--text-muted); font-style: italic;">— tidak terdeteksi</span>';
+          if (aiVal && ocrFailReasons[key]) {
+            html += '<div style="font-size: 9px; color: var(--danger); margin-top: 3px; font-family: var(--font); font-style: normal;">❌ ' + ocrFailReasons[key] + '</div>';
+          }
+        }
+        html += '</div>';
+
+        html += '<div style="padding: 7px 10px; border-left: 1px solid var(--border); ' + borderTop + aiExtra + ' font-family: var(--mono); font-size: 10px;">';
+        if (!aiEnabled) {
+          html += '<span style="color: var(--text-muted); font-style: italic;">— AI disabled</span>';
+        } else if (aiVal) {
+          html += '<span style="color: var(--text); font-weight: 500;">' + aiVal + '</span> <span style="color: ' + aiColor + '; font-size: 9px;">' + aiConf + '%</span>';
+          if (!ocrVal) {
+            html += ' <span style="font-size: 8px; background: var(--accent-glow); color: var(--accent-light); padding: 1px 5px; border-radius: 4px; margin-left: 2px;">NEW</span>';
+            if (aiSuccessReasons[key]) {
+              html += '<div style="font-size: 9px; color: var(--accent-light); margin-top: 3px; font-family: var(--font); font-style: normal;">🧠 ' + aiSuccessReasons[key] + '</div>';
+            }
+          }
+        } else if (ocrVal && !aiVal) {
+          html += '<span style="color: var(--text-muted); font-style: italic;">— ditolak</span>';
+          html += '<div style="font-size: 9px; color: var(--warning); margin-top: 3px; font-family: var(--font); font-style: normal;">⚠️ AI mendeteksi value OCR "' + ocrVal + '" bukan data valid — kemungkinan salah baca karakter (OCR artifact)</div>';
+        } else {
+          html += '<span style="color: var(--text-muted); font-style: italic;">— null</span>';
+        }
+        html += '</div>';
+      });
+
+      html += '</div>';
+
+      html += '<div style="margin-top: 10px; font-size: 9px; color: var(--text-muted); display: flex; gap: 12px; flex-wrap: wrap;">';
+      html += '<span><span style="color: var(--success);">●</span> ≥90% auto-filled</span>';
+      html += '<span><span style="color: var(--warning);">●</span> 70-90% review</span>';
+      html += '<span><span style="color: var(--danger);">●</span> <70% manual</span>';
+      html += '<span><span style="background: var(--accent-glow); color: var(--accent-light); padding: 0 4px; border-radius: 3px; font-size: 8px;">NEW</span> AI menemukan field yang OCR tidak bisa</span>';
+      html += '</div>';
+
+      const aiOnlyCount = allKeys.filter(k => !ocrMap[k] && aiMap[k]).length;
+      const ocrOnlyCount = allKeys.filter(k => ocrMap[k] && !aiMap[k]).length;
+      const bothCount = allKeys.filter(k => ocrMap[k] && aiMap[k]).length;
+
+      html += '<div style="margin-top: 14px; padding: 12px 14px; background: var(--surface-2); border-radius: 8px; border: 1px solid var(--border); border-left: 3px solid var(--accent);">';
+      html += '<div style="font-size: 11px; font-weight: 600; color: var(--accent-light); margin-bottom: 6px;">💡 Kenapa AI bisa extract lebih banyak?</div>';
+      html += '<div style="font-size: 10px; color: var(--text-secondary); line-height: 1.7;">';
+      html += '<div style="margin-bottom: 4px;"><strong>OCR + Regex</strong> hanya bisa menangkap field yang formatnya persis sesuai pola yang sudah di-program (misal: <code style="background: var(--surface-3); padding: 1px 4px; border-radius: 3px;">Invoice No: XXX</code>). Jika format dokumen sedikit berbeda, regex gagal mencocokkan.</div>';
+      html += '<div style="margin-bottom: 4px;"><strong>AI (LLM)</strong> membaca teks mentah yang sama dari OCR, tapi memahami <em>makna dan konteks</em>. AI tahu bahwa angka setelah "Container" adalah nomor container, meskipun tidak ada label eksplisit "Container No:".</div>';
+      html += '<div style="margin-top: 6px; padding: 6px 10px; background: var(--surface-3); border-radius: 6px;">';
+      html += '📊 Hasil: <strong>' + bothCount + '</strong> field ditemukan keduanya · <strong style="color: var(--accent);">' + aiOnlyCount + '</strong> field hanya AI yang bisa · <strong>' + ocrOnlyCount + '</strong> field hanya OCR';
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+
+      container.innerHTML = html;
     }
 
     // Reset
     function handleReset() {
       selectedFile = null;
       isProcessing = false;
+      document.getElementById('uploadArea').style.display = '';
       document.getElementById('fileInfo').style.display = 'none';
       document.getElementById('btnExtract').disabled = true;
       document.getElementById('btnReset').style.display = 'none';
-      document.getElementById('progressContainer').classList.remove('active');
       document.getElementById('emptyState').style.display = 'flex';
       document.getElementById('resultsContent').style.display = 'none';
+      document.getElementById('processingOverlay').style.display = 'none';
       document.getElementById('resultBadge').textContent = 'Menunggu';
       document.getElementById('resultBadge').style.background = 'var(--surface-3)';
       document.getElementById('resultBadge').style.color = 'var(--text-muted)';
@@ -1160,10 +1552,6 @@
       previewDiv.style.display = 'none';
       previewDiv.innerHTML = '<img id="previewImg" src="" style="width:100%;height:auto;max-height:100%;object-fit:contain;" />';
       document.getElementById('aiClassification').style.display = 'none';
-      const steps = ['step1','step2','step3','step4','step5'];
-      const labels = ['Membaca dokumen...','Pre-processing (CLAHE + denoise)...','OCR extraction (Tesseract 5)...','AI field extraction (LLaMA 3.1)...','Confidence scoring & validation...'];
-      steps.forEach((id,i) => { const el = document.getElementById(id); el.className = ''; el.textContent = '○ ' + labels[i]; });
-      document.getElementById('progressBar').style.width = '0%';
     }
 
     // Utils

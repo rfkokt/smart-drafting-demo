@@ -714,11 +714,11 @@
             <span>🖥️</span>
             <div>
               <div style="font-weight:600;">Lokal (Ollama)</div>
-              <div style="font-size:10px;opacity:0.7;">Offline, lebih lambat</div>
+              <div style="font-size:10px;opacity:0.7;">Offline, unduh model sekali</div>
             </div>
           </div>
           <div style="padding: 8px 12px; border-top: 1px solid var(--border);">
-            <label style="font-size:10px;color:var(--text-secondary);display:block;margin-bottom:4px;">Groq API Key</label>
+            <label style="font-size:10px;color:var(--text-secondary);display:block;margin-bottom:4px;">Groq API Key (untuk Cloud)</label>
             <input type="password" id="groqKeyInput" placeholder="gsk_xxx..." style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:11px;font-family:var(--mono);background:var(--surface-2);color:var(--text);" oninput="saveGroqKey()" />
             <div style="font-size:9px;color:var(--text-muted);margin-top:4px;">Dapatkan key gratis di console.groq.com/keys</div>
           </div>
@@ -732,6 +732,7 @@
               <option value="qwen2.5:7b">qwen2.5:7b — High Accuracy (~4.7GB)</option>
             </select>
           </div>
+          <div id="ollamaMenuStatus" style="padding: 8px 12px; border-top: 1px solid var(--border); font-size: 10px; color: var(--text-muted);"></div>
         </div>
       <div class="header-status-group">
         <div class="header-status">
@@ -741,6 +742,10 @@
         <div class="header-status">
           <span class="status-dot" id="internetDot"></span>
           <span id="internetText">Internet...</span>
+        </div>
+        <div class="header-status">
+          <span class="status-dot" id="aiDot"></span>
+          <span id="aiStatusText">AI...</span>
         </div>
       </div>
     </div>
@@ -1660,6 +1665,21 @@
       document.querySelectorAll('.ai-mode-option').forEach((el, i) => {
         el.classList.toggle('active', (i === 0 && currentAiMode === 'cloud') || (i === 1 && currentAiMode === 'local'));
       });
+      updateAiStatus();
+    }
+
+    function updateAiStatus() {
+      const dot = document.getElementById('aiDot');
+      const text = document.getElementById('aiStatusText');
+      if (!dot || !text) return;
+      if (currentAiMode === 'cloud') {
+        const hasKey = !!(localStorage.getItem('groq_api_key') || '');
+        dot.className = hasKey ? 'status-dot' : 'status-dot offline';
+        text.textContent = hasKey ? 'AI: Cloud' : 'AI: No Key';
+      } else {
+        dot.className = 'status-dot offline';
+        text.textContent = 'AI: Lokal';
+      }
     }
     updateAiModeUI();
 
